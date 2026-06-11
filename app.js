@@ -92,7 +92,7 @@
     return res;
   }
 
-  var APP_VERSION = "v8";
+  var APP_VERSION = "v9";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
@@ -199,7 +199,7 @@
       '<div class="sub">' + esc(rec["규  격"] || "") + ' · ' + esc(rec["제 조 사"] || "") + ' · 단가 ' + price + '</div>' +
       '<div class="code">' + esc(rec["표준코드"]) + '</div>' +
       '<div class="fields">' +
-        '<label>소분수량<input id="inQty" type="number" inputmode="numeric" min="1" value="1"></label>' +
+        '<label>소분수량<input id="inQty" type="number" inputmode="numeric" min="1" placeholder="수량 입력"></label>' +
         '<label>유효기간<input id="inExp" type="date"></label>' +
       '</div>' +
       '<div class="warnmsg hide" id="expWarn">⚠ 유효기간이 2020~2026.06 범위를 벗어납니다. 받지 않는 제품일 수 있어요.</div>' +
@@ -217,6 +217,10 @@
     document.getElementById("btnAdd").addEventListener("click", function () {
       addItem(rec, inQty.value, inExp.value);
     });
+    inQty.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); addItem(rec, inQty.value, inExp.value); }
+    });
+    inQty.addEventListener("focus", function () { inQty.select(); });
     // 2D코드에서 유효기간을 읽었으면 자동 입력
     if (autoExp) {
       inExp.value = autoExp;
