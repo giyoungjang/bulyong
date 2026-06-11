@@ -92,7 +92,7 @@
     return res;
   }
 
-  var APP_VERSION = "v7";
+  var APP_VERSION = "v8";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
@@ -366,80 +366,68 @@
   // ---------- 엑셀 내보내기 (시트1 양식) ----------
   document.getElementById("btnExport").addEventListener("click", exportXlsx);
 
-  // 시트1 27개 컬럼 (양식 순서)
-  var OUT_COLS = ["순번","제품코드","제 조 사","발  주  처","출 력 명","규  격","소분수량","금액","유효기간",
-    "거래처코드","약국명","담당자","작업일자","기준단가","거래처도매","기준가격×계산단위","보험코드","제품명",
-    "제품구분","단위","성분분류","제형구분","제품그룹","성 분","표준코드","신고계산단위","비고"];
-
   function num(v) { var n = Number(String(v).replace(/,/g, "")); return isFinite(n) ? n : 0; }
 
+  // base64 -> ArrayBuffer
+  function b64ToBuf(b64) {
+    var bin = atob(b64), len = bin.length, bytes = new Uint8Array(len);
+    for (var i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
+  }
+  function downloadBlob(blob, fname) {
+    var a = document.createElement("a"), url = URL.createObjectURL(blob);
+    a.href = url; a.download = fname; document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 800);
+  }
+  // 파일명: 담당자.약국.거래처코드.작업일자 (빈 항목은 건너뜀)
+  function buildFilename() {
+    function clean(x) { return String(x == null ? "" : x).replace(/[\/:*?"<>|.]+/g, " ").replace(/\s+/g, " ").trim(); }
+    var parts = [clean(settings.worker), clean(settings.pharm), clean(settings.client), clean(settings.date)]
+      .filter(function (x) { return x; });
+    return (parts.join(".") || "불용재고") + ".xlsx";
+  }
+  // 데이터 -> 템플릿 행값 (열번호:값). 8열(금액)은 수식으로 별도 처리
+  function rowValues(it, idx) {
+    var d = it.data || {};
+    return {
+      1: idx + 1, 2: d["제품코드"] || "", 3: d["제 조 사"] || "", 4: d["발  주  처"] || "",
+      5: d["출 력 명"] || "", 6: d["규  격"] || "", 7: it.qty, 9: fmtExp(it.exp),
+      10: settings.client || "", 11: settings.pharm || "", 12: settings.worker || "", 13: settings.date || "",
+      14: num(d["기준단가"]), 15: d["거래처도매"] || "", 16: d["기준가격×계산단위"] || "", 17: d["보험코드"] || "",
+      18: d["제품명"] || "", 19: d["제품구분"] || "", 20: d["단위"] || "", 21: d["성분분류"] || "",
+      22: d["제형구분"] || "", 23: d["제품그룹"] || "", 24: d["성 분"] || "", 25: d["표준코드"] || "",
+      26: d["신고계산단위"] || "", 27: d["비고"] || ""
+    };
+  }
+
+  // 원본 시트1 양식(템플릿)에 데이터만 채워 내보내기 — 서식 그대로 보존
   function exportXlsx() {
     if (!items.length) { toast("입력된 품목이 없습니다"); return; }
-    if (!window.XLSX) { toast("엑셀 모듈 로딩 실패"); return; }
-
-    var date = settings.date || "";
-    var ym = "";
-    var mD = /^(\d{4})-(\d{2})/.exec(date);
-    if (mD) ym = mD[1] + " " + mD[2] + " 월";
-
-    var aoa = [];
-    function blank() { return new Array(27).fill(""); }
-    // 상단 안내 (원본 양식 재현)
-    var r2 = blank(); r2[5] = "파일에 포함된 제품만 가능하고 **유효기간 2020년부터 2026년 06월** 이전제품만가능 /제품은 원제품 포장에 있는것 만 가능합니다.";
-    var r3 = blank(); r3[1] = "%%불용재고 품목 명세서  " + ym + "$$";
-    var r5 = blank(); r5[5] = "*포는 1포기준 /점안액30A은 1A /ml 통안약은 1통기준 등록";
-    var r6 = blank(); r6[5] = "*점안액 % & ml 확인철저히 할것";
-    var r7 = blank(); r7[5] = "하원제약 테라젠 이텍스는 출하건만 가능";
-    aoa.push(blank(), r2, r3, blank(), r5, r6, r7, blank());
-    aoa.push(OUT_COLS.slice());
-
-    items.forEach(function (it, i) {
-      var d = it.data || {};
-      var price = num(d["기준단가"]);
-      var amount = price * it.qty;
-      var row = [
-        i + 1,
-        d["제품코드"] || "",
-        d["제 조 사"] || "",
-        d["발  주  처"] || "",
-        d["출 력 명"] || "",
-        d["규  격"] || "",
-        it.qty,
-        amount,
-        fmtExp(it.exp),
-        settings.client || "",
-        settings.pharm || "",
-        settings.worker || "",
-        date,
-        price,
-        d["거래처도매"] || "",
-        d["기준가격×계산단위"] || "",
-        d["보험코드"] || "",
-        d["제품명"] || "",
-        d["제품구분"] || "",
-        d["단위"] || "",
-        d["성분분류"] || "",
-        d["제형구분"] || "",
-        d["제품그룹"] || "",
-        d["성 분"] || "",
-        d["표준코드"] || "",
-        d["신고계산단위"] || "",
-        d["비고"] || ""
-      ];
-      aoa.push(row);
-    });
-
-    var ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"] = OUT_COLS.map(function (c) {
-      if (c === "출 력 명" || c === "제품명" || c === "성 분") return { wch: 26 };
-      if (c === "표준코드" || c === "성분분류" || c === "보험코드") return { wch: 16 };
-      return { wch: 10 };
-    });
-    var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "시트1");
-    var fname = "불용재고_" + (date || "출력") + ".xlsx";
-    XLSX.writeFile(wb, fname);
-    toast("엑셀 저장: " + fname);
+    if (!window.ExcelJS || !window.TEMPLATE_B64) { toast("엑셀 모듈 로딩 실패 (인터넷 확인)"); return; }
+    toast("엑셀 만드는 중…");
+    var DATA_ROW = 10; // 템플릿: 9행 머리글, 10행부터 데이터
+    var wb = new ExcelJS.Workbook();
+    wb.xlsx.load(b64ToBuf(window.TEMPLATE_B64)).then(function () {
+      var ws = wb.worksheets[0];
+      var sample = ws.getRow(DATA_ROW), styles = [], h = sample.height;
+      for (var c = 1; c <= 27; c++) styles[c] = sample.getCell(c).style;
+      items.forEach(function (it, idx) {
+        var r = DATA_ROW + idx, row = ws.getRow(r), vals = rowValues(it, idx);
+        for (var c = 1; c <= 27; c++) {
+          var cell = row.getCell(c);
+          if (c === 8) cell.value = { formula: "G" + r + "*N" + r }; // 금액=소분수량×기준단가
+          else cell.value = (vals[c] === undefined || vals[c] === "") ? null : vals[c];
+          if (styles[c]) cell.style = styles[c];
+        }
+        if (h) row.height = h;
+      });
+      return wb.xlsx.writeBuffer();
+    }).then(function (buf) {
+      var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      var fname = buildFilename();
+      downloadBlob(blob, fname);
+      toast("엑셀 저장: " + fname);
+    }).catch(function (e) { toast("엑셀 생성 오류"); console.error(e); });
   }
 
   // ---------- 시작 ----------
