@@ -93,7 +93,7 @@
     return res;
   }
 
-  var APP_VERSION = "v16";
+  var APP_VERSION = "v17";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
@@ -518,12 +518,28 @@
       .filter(function (x) { return x; });
     return (parts.join(".") || "불용재고") + ".xlsx";
   }
-  var BLUE_RGB = "FF333399"; // 원본 시트1의 청색 출력명 글씨색
-  // 청색 글씨 스타일(원본 서식 복제 후 글자색만 청색으로)
+  var MARK_RGB = "FF008080"; // 표시 대상 행 글씨색(청록색)
+  // 표시 글씨 스타일(원본 서식 복제 후 굵게 + 청록색)
   function cloneBlue(st) {
     var s = st ? JSON.parse(JSON.stringify(st)) : {};
-    s.font = Object.assign({}, s.font || {}, { color: { argb: BLUE_RGB } });
+    s.font = Object.assign({}, s.font || {}, { bold: true, color: { argb: MARK_RGB } });
     return s;
+  }
+
+  // 원본 양식의 정확한 열 너비(엑셀 문자단위). ExcelJS가 일부 너비를 떨어뜨려도 강제로 맞춤
+  var COLW = {
+    s1: [5.89, 6.89, 8.78, 9.22, 22.55, 5.78, 8.22, 9.89, 11.44, 9.22, 11.0, 7.22, 9.0, 7.78, 9.55, 8.33, 9.22, 26.22, 8.33, 5.44, 8.78, 8.33, 8.33, 8.89, 14.0, 6.78, 7.0],
+    s2: [4.11, 5.33, 9.78, 17.22, 25.66, 6.33, 6.22, 8.11, 11.44, 9.33, 10.11, 0, 0, null, 16.33, 10.22, 8.89, null, null, null, null, 4.78, 4.33, null, null, null],
+    s3: [7.33, 15.33, 7.33, 10.78, 1.55, 1.78, 7.33, 15.33, 7.33, 10.78]
+  };
+  function applyColWidths(ws, arr) {
+    for (var i = 0; i < arr.length; i++) {
+      var w = arr[i];
+      if (w == null) continue;            // 기본값 유지
+      var col = ws.getColumn(i + 1);
+      if (w === 0) { col.hidden = true; col.width = 8.43; } // 숨김열
+      else { col.width = w; col.hidden = false; }
+    }
   }
 
   // 엑셀 유효기간 표기 "YYYY-MM-DD" (일 없으면 01)
@@ -609,15 +625,18 @@
     return { top: STK_TOPS[page * 8 + (ps % 8)], bc: right ? 7 : 1 };
   }
   function fillSheet3(ws) {
-    // 스티커 값칸 위치(블록행, 열offset). 라벨칸은 건드리지 않음
-    var VCELLS = [[0, 3], [1, 1], [1, 3], [2, 1], [2, 3], [3, 1], [3, 3], [4, 1], [5, 1]];
     function setVal(top, bc, rr, cofs, val) {
       ws.getCell(top + rr, bc + cofs).value = (val === "" || val == null) ? null : val;
     }
     for (var s = 0; s < 32; s++) {
       var p = stkPos(s), it = items[s];
-      if (!it) { // 빈 슬롯: 값칸만 비움(0 안 뜨게), 라벨·서식은 그대로
-        for (var k = 0; k < VCELLS.length; k++) ws.getCell(p.top + VCELLS[k][0], p.bc + VCELLS[k][1]).value = null;
+      if (!it) { // 빈 슬롯: 스티커 전체(6행×4열) 비우고 테두리·라벨 제거 → 빈칸 자체를 없앰
+        for (var rr = 0; rr < 6; rr++) {
+          for (var co = 0; co < 4; co++) {
+            var ce = ws.getCell(p.top + rr, p.bc + co);
+            ce.value = null; ce.style = {};
+          }
+        }
         continue;
       }
       var d = it.data || {}, qty = it.qty, price = num(d["기준단가"]);
@@ -645,6 +664,9 @@
       fillSheet1(wb.worksheets[0]);
       fillSheet2(wb.worksheets[1]);
       fillSheet3(wb.worksheets[2]);
+      applyColWidths(wb.worksheets[0], COLW.s1);
+      applyColWidths(wb.worksheets[1], COLW.s2);
+      applyColWidths(wb.worksheets[2], COLW.s3);
       return wb.xlsx.writeBuffer();
     }).then(function (buf) {
       var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
