@@ -93,7 +93,7 @@
     return res;
   }
 
-  var APP_VERSION = "v17";
+  var APP_VERSION = "v18";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
@@ -518,8 +518,8 @@
       .filter(function (x) { return x; });
     return (parts.join(".") || "불용재고") + ".xlsx";
   }
-  var MARK_RGB = "FF008080"; // 표시 대상 행 글씨색(청록색)
-  // 표시 글씨 스타일(원본 서식 복제 후 굵게 + 청록색)
+  var MARK_RGB = "FF254771"; // 표시 대상 행 글씨색
+  // 표시 글씨 스타일(원본 서식 복제 후 굵게 + 지정색)
   function cloneBlue(st) {
     var s = st ? JSON.parse(JSON.stringify(st)) : {};
     s.font = Object.assign({}, s.font || {}, { bold: true, color: { argb: MARK_RGB } });
@@ -529,7 +529,7 @@
   // 원본 양식의 정확한 열 너비(엑셀 문자단위). ExcelJS가 일부 너비를 떨어뜨려도 강제로 맞춤
   var COLW = {
     s1: [5.89, 6.89, 8.78, 9.22, 22.55, 5.78, 8.22, 9.89, 11.44, 9.22, 11.0, 7.22, 9.0, 7.78, 9.55, 8.33, 9.22, 26.22, 8.33, 5.44, 8.78, 8.33, 8.33, 8.89, 14.0, 6.78, 7.0],
-    s2: [4.11, 5.33, 9.78, 17.22, 25.66, 6.33, 6.22, 8.11, 11.44, 9.33, 10.11, 0, 0, null, 16.33, 10.22, 8.89, null, null, null, null, 4.78, 4.33, null, null, null],
+    s2: [4.11, 5.33, 9.78, 17.22, 25.66, 6.33, 6.22, 8.11, 11.44, 9.33, 10.11, 0, 0, 8, 16.33, 10.22, 8.89, 8, 8, 8, 8, 4.78, 4.33, 8, 8, 8],
     s3: [7.33, 15.33, 7.33, 10.78, 1.55, 1.78, 7.33, 15.33, 7.33, 10.78]
   };
   function applyColWidths(ws, arr) {
@@ -577,44 +577,39 @@
     };
   }
 
-  // 시트1 채우기 (10행부터, 27열, 출력명 청색)
+  // 시트1 채우기 (10행부터, 27열). 표시 대상이면 행 전체 굵게+색상
   function fillSheet1(ws) {
-    var DR = 10, sample = ws.getRow(DR), styles = [], h = sample.height, c;
-    for (c = 1; c <= 27; c++) styles[c] = sample.getCell(c).style;
-    var blue5 = cloneBlue(styles[5]);
+    var DR = 10, sample = ws.getRow(DR), styles = [], blues = [], h = sample.height, c;
+    for (c = 1; c <= 27; c++) { styles[c] = sample.getCell(c).style; blues[c] = cloneBlue(styles[c]); }
     items.forEach(function (it, idx) {
       var r = DR + idx, row = ws.getRow(r), vals = rowValues(it, idx), isBlue = !!BLUE[it.barcode];
       for (var c = 1; c <= 27; c++) {
         var cell = row.getCell(c);
         if (c === 8) cell.value = { formula: "G" + r + "*N" + r };
         else cell.value = (vals[c] === undefined || vals[c] === "") ? null : vals[c];
-        cell.style = (c === 5 && isBlue) ? blue5 : styles[c];
+        cell.style = isBlue ? blues[c] : styles[c];
       }
       if (h) row.height = h;
     });
   }
 
-  // 시트2 채우기 — 원본 양식 그대로 두고 2행부터 값만 채움. 남는 원본 행은 비움(서식 유지)
+  // 시트2 채우기 — 2행부터 값 채움. 표시 대상이면 행 전체 굵게+색상. 남는 원본 행(빈칸)은 삭제
   function fillSheet2(ws) {
-    var DR = 2, LAST = 33, sample = ws.getRow(DR), styles = [], h = sample.height, c;
-    for (c = 1; c <= 26; c++) styles[c] = sample.getCell(c).style;
-    var blue5 = cloneBlue(styles[5]);
-    var rows = Math.max(LAST, DR + items.length - 1);
-    for (var i = 0; i <= rows - DR; i++) {
-      var r = DR + i, row = ws.getRow(r), it = items[i];
-      if (it) {
-        var vals = rowValues2(it, i), isBlue = !!BLUE[it.barcode];
-        for (c = 1; c <= 26; c++) {
-          var cell = row.getCell(c);
-          if (c === 8) cell.value = { formula: "G" + r + "*N" + r };
-          else cell.value = (vals[c] === undefined || vals[c] === "") ? null : vals[c];
-          cell.style = (c === 5 && isBlue) ? blue5 : styles[c];
-        }
-      } else {
-        for (c = 1; c <= 26; c++) { var ce = row.getCell(c); ce.value = null; ce.style = styles[c]; }
+    var DR = 2, LAST = 33, sample = ws.getRow(DR), styles = [], blues = [], h = sample.height, c;
+    for (c = 1; c <= 26; c++) { styles[c] = sample.getCell(c).style; blues[c] = cloneBlue(styles[c]); }
+    var n = items.length;
+    items.forEach(function (it, i) {
+      var r = DR + i, row = ws.getRow(r), vals = rowValues2(it, i), isBlue = !!BLUE[it.barcode];
+      for (var c = 1; c <= 26; c++) {
+        var cell = row.getCell(c);
+        if (c === 8) cell.value = { formula: "G" + r + "*N" + r };
+        else cell.value = (vals[c] === undefined || vals[c] === "") ? null : vals[c];
+        cell.style = isBlue ? blues[c] : styles[c];
       }
       if (h) row.height = h;
-    }
+    });
+    // 원본 샘플 행이 데이터보다 많으면 남는 빈 행 삭제
+    if (n < LAST - DR + 1) ws.spliceRows(DR + n, (LAST - DR + 1) - n);
   }
 
   // 시트3 스티커 — 원본 양식(셀크기·테두리·페이지나눔) 그대로. 32개 슬롯에 값만 채움/비움
@@ -641,9 +636,7 @@
       }
       var d = it.data || {}, qty = it.qty, price = num(d["기준단가"]);
       setVal(p.top, p.bc, 0, 3, d["제품코드"] || "");                  // 분류번호
-      var nm = ws.getCell(p.top + 1, p.bc + 1);                        // 약품명
-      nm.value = d["출 력 명"] || d["제품명"] || "";
-      if (BLUE[it.barcode]) nm.style = cloneBlue(nm.style);
+      setVal(p.top, p.bc, 1, 1, d["출 력 명"] || d["제품명"] || "");    // 약품명
       setVal(p.top, p.bc, 1, 3, price || "");                          // 단가
       setVal(p.top, p.bc, 2, 1, d["발  주  처"] || d["제 조 사"] || ""); // 제약회사
       setVal(p.top, p.bc, 2, 3, (qty * price) || "");                  // 반품금액
@@ -651,6 +644,13 @@
       setVal(p.top, p.bc, 3, 3, settings.pharm || "");                 // 약국명
       setVal(p.top, p.bc, 4, 1, excelExp(it.exp));                      // 유효기간
       setVal(p.top, p.bc, 5, 1, qty);                                  // 반품수량
+      // 표시 대상이면 스티커 전체 굵게+색상
+      if (BLUE[it.barcode]) {
+        for (var rr = 0; rr < 6; rr++) for (var co = 0; co < 4; co++) {
+          var cc = ws.getCell(p.top + rr, p.bc + co);
+          cc.style = cloneBlue(cc.style);
+        }
+      }
     }
   }
 
