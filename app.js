@@ -93,7 +93,7 @@
     return res;
   }
 
-  var APP_VERSION = "v13";
+  var APP_VERSION = "v14";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 

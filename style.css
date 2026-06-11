@@ -46,6 +46,8 @@ button:disabled{opacity:.5}
 .result .sub{color:#cbd5e1;font-size:14px;margin-top:4px}
 .result .code{font-family:ui-monospace,monospace;color:var(--muted);font-size:13px;margin-top:6px}
 
+.searchfull{width:100%;font-size:17px;padding:13px;border-radius:12px;border:1px solid var(--line);
+  background:#0b1220;color:#fff;margin:12px 0 0}
 #searchResults{max-height:46vh;overflow-y:auto;margin-top:8px}
 .srrow{padding:11px 12px;border:1px solid var(--line);border-radius:11px;margin-bottom:7px;
   background:#0f172a;cursor:pointer}
