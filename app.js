@@ -32,33 +32,51 @@
     return null;
   }
 
-  // 의약품 2D(DataMatrix) GS1 코드 파싱: (01)GTIN (17)유효기간 (10)로트 (21)일련번호
+  // 의약품 2D(DataMatrix/QR) GS1 코드 파싱: (01)GTIN (17)유효기간 (10)로트 (21)일련번호
+  // 구분자(FNC1)가 없는 코드도 처리: 가변필드는 다음 날짜AI(유효한 날짜)에서 끊음
+  var GS_FIXEDLEN = { "00": 18, "01": 14, "02": 14, "11": 6, "12": 6, "13": 6, "15": 6, "16": 6, "17": 6, "20": 2 };
+  var GS_DATEAI = { "11": 1, "12": 1, "13": 1, "15": 1, "16": 1, "17": 1 };
+  var GS_KNOWN = { "00": 1, "01": 1, "02": 1, "10": 1, "11": 1, "12": 1, "13": 1, "15": 1, "16": 1, "17": 1, "20": 1, "21": 1, "22": 1, "30": 1, "37": 1, "90": 1, "91": 1, "92": 1, "93": 1, "99": 1 };
+  function gsValidDate(d) {
+    if (!/^\d{6}$/.test(d || "")) return false;
+    var mm = +d.substr(2, 2), dd = +d.substr(4, 2);
+    return mm >= 1 && mm <= 12 && dd >= 0 && dd <= 31;
+  }
   function parseGS1(raw) {
     if (raw == null) return null;
-    var s = String(raw);
-    if (s.charAt(0) === "]") s = s.substring(3); // 심볼로지 식별자 ]d2 / ]Q1 등 제거
+    var s = String(raw).trim();
+    if (s.charAt(0) === "]") s = s.substring(3); // ]d2 / ]Q1 등 심볼로지 식별자 제거
     var GS = String.fromCharCode(29);
     if (!/^\d{2}/.test(s)) return null;
-    var FIXED = { "00": 18, "01": 14, "02": 14, "03": 14, "11": 6, "12": 6, "13": 6, "15": 6, "16": 6, "17": 6, "20": 2 };
-    var VAR = { "10": 1, "21": 1, "22": 1, "30": 1, "37": 1, "90": 1, "91": 1, "92": 1, "93": 1, "99": 1 };
     var out = {}, i = 0, guard = 0;
-    while (i < s.length && guard++ < 40) {
+    while (i < s.length && guard++ < 60) {
       if (s.charAt(i) === GS) { i++; continue; }
       var ai = s.substr(i, 2);
-      if (FIXED[ai] !== undefined) {
-        out[ai] = s.substr(i + 2, FIXED[ai]); i += 2 + FIXED[ai];
-      } else if (VAR[ai] !== undefined) {
-        var st = i + 2, g = s.indexOf(GS, st); if (g < 0) g = s.length;
-        out[ai] = s.substring(st, g); i = g;
-      } else { break; }
+      if (!GS_KNOWN[ai]) break;
+      if (GS_FIXEDLEN[ai] !== undefined) {
+        out[ai] = s.substr(i + 2, GS_FIXEDLEN[ai]);
+        i += 2 + GS_FIXEDLEN[ai];
+      } else { // 가변길이(10,21,...)
+        var st = i + 2, j = st, end = -1;
+        while (j < s.length) {
+          if (s.charAt(j) === GS) { end = j; break; }
+          var a2 = s.substr(j, 2);
+          if (j > st && GS_DATEAI[a2] && gsValidDate(s.substr(j + 2, 6))) { end = j; break; }
+          j++;
+        }
+        if (end < 0) end = s.length;
+        out[ai] = s.substring(st, end);
+        i = (end < s.length && s.charAt(end) === GS) ? end + 1 : end;
+        if (end >= s.length) break;
+      }
     }
     if (out["01"] === undefined) return null;
     var res = { gtin: out["01"], lot: out["10"], serial: out["21"] };
-    if (out["17"] && /^\d{6}$/.test(out["17"])) res.expiry = "20" + out["17"].substr(0, 2) + "-" + out["17"].substr(2, 2);
+    if (out["17"] && gsValidDate(out["17"])) res.expiry = "20" + out["17"].substr(0, 2) + "-" + out["17"].substr(2, 2);
     return res;
   }
 
-  var APP_VERSION = "v3";
+  var APP_VERSION = "v4";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
