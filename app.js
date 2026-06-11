@@ -93,7 +93,7 @@
     return res;
   }
 
-  var APP_VERSION = "v20";
+  var APP_VERSION = "v21";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
@@ -519,11 +519,9 @@
     return (parts.join(".") || "불용재고") + ".xlsx";
   }
   var MARK_RGB = "FF254771"; // 표시 대상 행 글씨색
-  // 표시 글씨 스타일(원본 서식 복제 후 굵게 + 지정색)
-  function cloneBlue(st) {
-    var s = st ? JSON.parse(JSON.stringify(st)) : {};
-    s.font = Object.assign({}, s.font || {}, { bold: true, color: { argb: MARK_RGB } });
-    return s;
+  // 셀 글꼴을 직접 굵게+지정색으로 (cell.font 직접 지정이 가장 확실)
+  function markCell(cell) {
+    cell.font = Object.assign({}, cell.font || {}, { bold: true, color: { argb: MARK_RGB } });
   }
 
   // 원본 양식의 정확한 열 너비(엑셀 문자단위). ExcelJS가 일부 너비를 떨어뜨려도 강제로 맞춤
@@ -582,15 +580,16 @@
 
   // 시트1 채우기 (10행부터, 27열). 표시 대상이면 행 전체 굵게+색상
   function fillSheet1(ws) {
-    var DR = 10, sample = ws.getRow(DR), styles = [], blues = [], h = sample.height, c;
-    for (c = 1; c <= 27; c++) { styles[c] = sample.getCell(c).style; blues[c] = cloneBlue(styles[c]); }
+    var DR = 10, sample = ws.getRow(DR), styles = [], h = sample.height, c;
+    for (c = 1; c <= 27; c++) styles[c] = sample.getCell(c).style;
     items.forEach(function (it, idx) {
       var r = DR + idx, row = ws.getRow(r), vals = rowValues(it, idx), isBlue = !!BLUE[it.barcode];
       for (var c = 1; c <= 27; c++) {
         var cell = row.getCell(c);
         if (c === 8) cell.value = { formula: "G" + r + "*N" + r };
         else cell.value = (vals[c] === undefined || vals[c] === "") ? null : vals[c];
-        cell.style = isBlue ? blues[c] : styles[c];
+        cell.style = styles[c];
+        if (isBlue) markCell(cell);
       }
       if (h) row.height = h;
     });
@@ -599,15 +598,16 @@
   // 시트2 채우기 — 2행부터 입력 품목만 채움(템플릿은 머리글+1행뿐이라 빈 행이 안 남음)
   // 표시 대상이면 행 전체 굵게+색상
   function fillSheet2(ws) {
-    var DR = 2, sample = ws.getRow(DR), styles = [], blues = [], h = sample.height, c;
-    for (c = 1; c <= 26; c++) { styles[c] = sample.getCell(c).style; blues[c] = cloneBlue(styles[c]); }
+    var DR = 2, sample = ws.getRow(DR), styles = [], h = sample.height, c;
+    for (c = 1; c <= 26; c++) styles[c] = sample.getCell(c).style;
     items.forEach(function (it, i) {
       var r = DR + i, row = ws.getRow(r), vals = rowValues2(it, i), isBlue = !!BLUE[it.barcode];
       for (var c = 1; c <= 26; c++) {
         var cell = row.getCell(c);
         if (c === 8) cell.value = { formula: "G" + r + "*N" + r };
         else cell.value = (vals[c] === undefined || vals[c] === "") ? null : vals[c];
-        cell.style = isBlue ? blues[c] : styles[c];
+        cell.style = styles[c];
+        if (isBlue) markCell(cell);
       }
       if (h) row.height = h;
     });
@@ -647,10 +647,7 @@
       setVal(p.top, p.bc, 5, 1, qty);                                  // 반품수량
       // 표시 대상이면 타이틀행만: "불용재고의약품" · "분류번호" · 분류번호숫자
       if (BLUE[it.barcode]) {
-        [0, 2, 3].forEach(function (co) {
-          var cc = ws.getCell(p.top, p.bc + co);
-          cc.style = cloneBlue(cc.style);
-        });
+        [0, 2, 3].forEach(function (co) { markCell(ws.getCell(p.top, p.bc + co)); });
       }
     }
   }
