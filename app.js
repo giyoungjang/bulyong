@@ -92,7 +92,7 @@
     return res;
   }
 
-  var APP_VERSION = "v9";
+  var APP_VERSION = "v10";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
@@ -187,9 +187,13 @@
         '</div>';
       return;
     }
-    var rec = match.rec;
     beep(true);
     if (navigator.vibrate) navigator.vibrate(60);
+    renderMatch(match.rec, autoExp);
+  }
+
+  // 받는 품목 카드 렌더(수량·유효기간 입력) — 스캔/검색 공용
+  function renderMatch(rec, autoExp) {
     pending = rec;
     var name = rec["출 력 명"] || rec["제품명"] || "(이름없음)";
     var price = rec["기준단가"] ? (Number(rec["기준단가"]).toLocaleString() + "원") : "-";
@@ -299,6 +303,79 @@
   manualInput.addEventListener("keydown", function (e) {
     if (e.key === "Enter") { e.preventDefault(); showResult(manualInput.value); }
   });
+
+  // ---------- 제품명 검색 (바코드 없는 경우) ----------
+  var searchInput = document.getElementById("searchInput");
+  var searchResults = document.getElementById("searchResults");
+  var CI_NAME = COL["출 력 명"], CI_PNAME = COL["제품명"], CI_SPEC = COL["규  격"],
+      CI_MAKER = COL["제 조 사"], CI_STD = COL["표준코드"];
+
+  function searchProducts(q) {
+    q = String(q || "").trim();
+    if (q.length < 1) return [];
+    var terms = q.split(/\s+/);
+    var rows = DATA.rows, out = [];
+    for (var i = 0; i < rows.length && out.length < 40; i++) {
+      var row = rows[i];
+      var hay = (row[CI_NAME] || "") + " " + (row[CI_PNAME] || "") + " " +
+                (row[CI_SPEC] || "") + " " + (row[CI_MAKER] || "");
+      var ok = true;
+      for (var t = 0; t < terms.length; t++) {
+        if (hay.indexOf(terms[t]) < 0) { ok = false; break; }
+      }
+      if (ok) out.push(i);
+    }
+    return out;
+  }
+
+  function recFromRow(idx) {
+    var row = DATA.rows[idx], rec = {};
+    DATA.cols.forEach(function (c, i) { rec[c] = row[i]; });
+    return rec;
+  }
+
+  function runSearch() {
+    var q = String(searchInput.value || "").trim();
+    if (q.length < 1) { searchResults.innerHTML = ""; return; }
+    var hits = searchProducts(q);
+    if (!hits.length) {
+      searchResults.innerHTML = '<div class="srempty">검색 결과가 없습니다. (이름·규격·제조사로 검색)</div>';
+      return;
+    }
+    var html = "";
+    hits.forEach(function (idx) {
+      var row = DATA.rows[idx];
+      var nm = row[CI_NAME] || row[CI_PNAME] || "(이름없음)";
+      var sub = (row[CI_SPEC] || "") + " · " + (row[CI_MAKER] || "");
+      html += '<div class="srrow" data-idx="' + idx + '">' +
+              '<div class="srname">' + esc(nm) + '</div>' +
+              '<div class="srsub">' + esc(sub) + '</div></div>';
+    });
+    searchResults.innerHTML = html;
+    Array.prototype.forEach.call(searchResults.querySelectorAll(".srrow"), function (el) {
+      el.addEventListener("click", function () {
+        var idx = parseInt(el.getAttribute("data-idx"), 10);
+        searchResults.innerHTML = "";
+        searchInput.value = "";
+        beep(true);
+        renderMatch(recFromRow(idx), "");
+        resultBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+    });
+  }
+
+  if (searchInput) {
+    var srTimer = null;
+    searchInput.addEventListener("input", function () {
+      clearTimeout(srTimer);
+      srTimer = setTimeout(runSearch, 200);
+    });
+    searchInput.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); clearTimeout(srTimer); runSearch(); }
+    });
+    var btnSearch = document.getElementById("btnSearch");
+    if (btnSearch) btnSearch.addEventListener("click", runSearch);
+  }
 
   // ---------- 카메라 스캔 ----------
   var scanner = null, scanning = false, lastCode = "", lastTime = 0;
