@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<title>불용재고 바코드 입력</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>불용재고 바코드 입력</h1>
+  <span class="badge" id="dataBadge">데이터 로딩…</span>
+</header>
+
+<div class="wrap">
+
+  <details class="settings">
+    <summary>⚙️ 작업 설정 (담당자 · 작업일자 · 약국)</summary>
+    <div class="fields">
+      <label>담당자<input id="setWorker" placeholder="이름"></label>
+      <label>작업일자<input id="setDate" type="date"></label>
+    </div>
+    <div class="fields">
+      <label>약국명<input id="setPharm" placeholder="(선택)"></label>
+      <label>거래처코드<input id="setClient" placeholder="(선택)"></label>
+    </div>
+    <p class="muted" style="margin:8px 0 4px">받는 조건: 파일에 있는 품목 · 유효기간 2020년~2026년 06월 · 원제품 포장. 유효기간이 범위를 벗어나면 노란색으로 표시돼요.</p>
+  </details>
+
+  <div class="scanbar">
+    <button id="btnScan">📷 카메라 스캔 시작</button>
+  </div>
+  <div id="reader" class="hide"></div>
+
+  <div class="manual">
+    <input id="manualInput" inputmode="numeric" placeholder="바코드 직접 입력 / 스캐너건" autocomplete="off">
+    <button class="sec" id="btnManual">조회</button>
+  </div>
+
+  <div id="resultBox"></div>
+
+  <div class="listhead">
+    <h2 id="listTitle">입력 목록</h2>
+    <button class="ghost" style="width:auto;padding:8px 12px;font-size:13px" id="btnClear">전체 비우기</button>
+  </div>
+  <div id="list"></div>
+  <p class="muted center" id="emptyHint">아직 입력된 품목이 없습니다. 바코드를 스캔하세요.</p>
+
+</div>
+
+<div class="footbar">
+  <div class="total">합계 <b id="totLines">0</b>품목 · <span id="totQty">0</span>수량</div>
+  <button id="btnExport">📥 엑셀 내보내기</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
