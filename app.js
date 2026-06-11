@@ -85,11 +85,14 @@
     }
     if (gtin === undefined) return null;
     var res = { gtin: gtin, lot: lot, serial: ser };
-    if (exp && gsValidDate(exp)) res.expiry = "20" + exp.substr(0, 2) + "-" + exp.substr(2, 2);
+    if (exp && gsValidDate(exp)) {
+      var dd = exp.substr(4, 2);
+      res.expiry = "20" + exp.substr(0, 2) + "-" + exp.substr(2, 2) + "-" + (dd === "00" ? "01" : dd);
+    }
     return res;
   }
 
-  var APP_VERSION = "v6";
+  var APP_VERSION = "v7";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
@@ -127,6 +130,14 @@
     var v = parseInt(m[1], 10) * 100 + parseInt(m[2], 10);
     if (v >= 202001 && v <= 202606) return "ok";
     return "bad";
+  }
+
+  // 유효기간을 엑셀/표시용 "YYYY.MM.DD" 형식으로 (일이 없으면 01)
+  function fmtExp(e) {
+    if (!e) return "";
+    var m = /^(\d{4})-(\d{2})(?:-(\d{2}))?/.exec(e);
+    if (!m) return e;
+    return m[1] + "." + m[2] + "." + (m[3] || "01");
   }
 
   // ---------- 화면 요소 ----------
@@ -189,7 +200,7 @@
       '<div class="code">' + esc(rec["표준코드"]) + '</div>' +
       '<div class="fields">' +
         '<label>소분수량<input id="inQty" type="number" inputmode="numeric" min="1" value="1"></label>' +
-        '<label>유효기간<input id="inExp" type="month"></label>' +
+        '<label>유효기간<input id="inExp" type="date"></label>' +
       '</div>' +
       '<div class="warnmsg hide" id="expWarn">⚠ 유효기간이 2020~2026.06 범위를 벗어납니다. 받지 않는 제품일 수 있어요.</div>' +
       '<button class="addbtn" id="btnAdd">＋ 목록에 추가</button>' +
@@ -252,7 +263,7 @@
       var d = it.data || {};
       var name = d["출 력 명"] || d["제품명"] || it.barcode;
       var st = expiryStatus(it.exp);
-      var expTxt = it.exp ? it.exp : "유효기간 미입력";
+      var expTxt = it.exp ? fmtExp(it.exp) : "유효기간 미입력";
       var badClass = (st === "bad" || st === "empty") ? " bad" : "";
       var div = document.createElement("div");
       div.className = "item";
@@ -395,7 +406,7 @@
         d["규  격"] || "",
         it.qty,
         amount,
-        it.exp || "",
+        fmtExp(it.exp),
         settings.client || "",
         settings.pharm || "",
         settings.worker || "",
