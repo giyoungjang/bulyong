@@ -44,39 +44,52 @@
   }
   function parseGS1(raw) {
     if (raw == null) return null;
-    var s = String(raw).trim();
-    if (s.charAt(0) === "]") s = s.substring(3); // ]d2 / ]Q1 등 심볼로지 식별자 제거
     var GS = String.fromCharCode(29);
-    if (!/^\d{2}/.test(s)) return null;
+    var s = String(raw).replace(/^\][A-Za-z0-9]{2}/, "");     // ]d2 / ]Q1 등 심볼로지 식별자 제거
     var out = {}, i = 0, guard = 0;
-    while (i < s.length && guard++ < 60) {
-      if (s.charAt(i) === GS) { i++; continue; }
-      var ai = s.substr(i, 2);
-      if (!GS_KNOWN[ai]) break;
-      if (GS_FIXEDLEN[ai] !== undefined) {
-        out[ai] = s.substr(i + 2, GS_FIXEDLEN[ai]);
-        i += 2 + GS_FIXEDLEN[ai];
-      } else { // 가변길이(10,21,...)
-        var st = i + 2, j = st, end = -1;
-        while (j < s.length) {
-          if (s.charAt(j) === GS) { end = j; break; }
-          var a2 = s.substr(j, 2);
-          if (j > st && GS_DATEAI[a2] && gsValidDate(s.substr(j + 2, 6))) { end = j; break; }
-          j++;
+    if (/^\d{2}/.test(s)) {
+      while (i < s.length && guard++ < 80) {
+        if (s.charAt(i) === GS) { i++; continue; }
+        var ai = s.substr(i, 2);
+        if (!GS_KNOWN[ai]) break;
+        if (GS_FIXEDLEN[ai] !== undefined) {
+          out[ai] = s.substr(i + 2, GS_FIXEDLEN[ai]);
+          i += 2 + GS_FIXEDLEN[ai];
+        } else { // 가변길이(10,21,...)
+          var st = i + 2, j = st, end = -1;
+          while (j < s.length) {
+            if (s.charAt(j) === GS) { end = j; break; }
+            var a2 = s.substr(j, 2);
+            if (j > st && GS_DATEAI[a2] && gsValidDate(s.substr(j + 2, 6))) { end = j; break; }
+            j++;
+          }
+          if (end < 0) end = s.length;
+          out[ai] = s.substring(st, end);
+          i = (end < s.length && s.charAt(end) === GS) ? end + 1 : end;
+          if (end >= s.length) break;
         }
-        if (end < 0) end = s.length;
-        out[ai] = s.substring(st, end);
-        i = (end < s.length && s.charAt(end) === GS) ? end + 1 : end;
-        if (end >= s.length) break;
       }
     }
-    if (out["01"] === undefined) return null;
-    var res = { gtin: out["01"], lot: out["10"], serial: out["21"] };
-    if (out["17"] && gsValidDate(out["17"])) res.expiry = "20" + out["17"].substr(0, 2) + "-" + out["17"].substr(2, 2);
+    var gtin = out["01"], exp = out["17"], lot = out["10"], ser = out["21"];
+    // 폴백: 괄호( (01).. )·공백·구분자 제거 후 정규식으로 GTIN/유효기간 직접 추출
+    if (gtin === undefined || exp === undefined) {
+      var clean = s.replace(/\D/g, ""); // 구분자·괄호·제어문자 무엇이든 제거, 숫자만
+      if (gtin === undefined) {
+        if (/^01\d{14}/.test(clean)) gtin = clean.substr(2, 14);
+        else { var mg = /01(\d{14})/.exec(clean); if (mg) gtin = mg[1]; }
+      }
+      if (exp === undefined) {
+        var re = /17(\d{6})/g, mm;
+        while ((mm = re.exec(clean))) { if (gsValidDate(mm[1])) { exp = mm[1]; break; } }
+      }
+    }
+    if (gtin === undefined) return null;
+    var res = { gtin: gtin, lot: lot, serial: ser };
+    if (exp && gsValidDate(exp)) res.expiry = "20" + exp.substr(0, 2) + "-" + exp.substr(2, 2);
     return res;
   }
 
-  var APP_VERSION = "v5";
+  var APP_VERSION = "v6";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
@@ -158,7 +171,9 @@
         '<div class="result no"><div class="tag">✕ 받지 않는 품목</div>' +
         '<div class="name">파일에 없는 제품입니다</div>' +
         '<div class="sub">이 바코드는 받는 품목 목록에 없습니다.</div>' +
-        '<div class="code">' + esc(shownCode) + '</div></div>';
+        '<div class="code">조회코드: ' + esc(shownCode) + '</div>' +
+        '<div class="code" style="font-size:11px;word-break:break-all;opacity:.8">스캔원문(' + String(barcode).length + '자): ' + esc(String(barcode)) + '</div>' +
+        '</div>';
       return;
     }
     var rec = match.rec;
