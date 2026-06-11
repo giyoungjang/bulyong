@@ -93,7 +93,7 @@
     return res;
   }
 
-  var APP_VERSION = "v19";
+  var APP_VERSION = "v20";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
@@ -532,13 +532,16 @@
     s2: [4.11, 5.33, 9.78, 17.22, 25.66, 6.33, 6.22, 8.11, 11.44, 9.33, 10.11, 0, 0, 8, 16.33, 10.22, 8.89, 8, 8, 8, 8, 4.78, 4.33, 8, 8, 8],
     s3: [7.33, 15.33, 7.33, 10.78, 1.55, 1.78, 7.33, 15.33, 7.33, 10.78]
   };
+  // 원본 기본글꼴 돋움(MDW 8px) vs xlsx 기본글꼴 Calibri(MDW 7px) 보정.
+  // 열너비 픽셀 = 폭×MDW+패딩(상수) 이므로, 같은 픽셀이 되려면 폭을 8/7배로
+  var WIDTH_RATIO = 8 / 7;
   function applyColWidths(ws, arr) {
     for (var i = 0; i < arr.length; i++) {
       var w = arr[i];
       if (w == null) continue;            // 기본값 유지
       var col = ws.getColumn(i + 1);
-      if (w === 0) { col.hidden = true; col.width = 8.43; } // 숨김열
-      else { col.width = w; col.hidden = false; }
+      if (w === 0) { col.hidden = true; col.width = 8.43 * WIDTH_RATIO; } // 숨김열
+      else { col.width = w * WIDTH_RATIO; col.hidden = false; }
     }
   }
 
