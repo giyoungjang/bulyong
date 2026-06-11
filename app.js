@@ -76,7 +76,7 @@
     return res;
   }
 
-  var APP_VERSION = "v4";
+  var APP_VERSION = "v5";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
@@ -425,7 +425,7 @@
     navigator.serviceWorker.addEventListener("controllerchange", function () {
       if (refreshing) return; refreshing = true; location.reload();
     });
-    navigator.serviceWorker.register("sw.js").then(function (reg) {
+    navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(function (reg) {
       reg.update();
       reg.addEventListener("updatefound", function () {
         var nw = reg.installing;
