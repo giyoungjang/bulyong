@@ -93,7 +93,7 @@
     return res;
   }
 
-  var APP_VERSION = "v15";
+  var APP_VERSION = "v16";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
@@ -526,12 +526,19 @@
     return s;
   }
 
+  // 엑셀 유효기간 표기 "YYYY-MM-DD" (일 없으면 01)
+  function excelExp(e) {
+    var m = /^(\d{4})-(\d{2})(?:-(\d{2}))?/.exec(String(e || ""));
+    if (!m) return "";
+    return m[1] + "-" + m[2] + "-" + (m[3] || "01");
+  }
+
   // 시트1(상세) 행값 — 27열. 8열(금액)은 수식 별도 처리
   function rowValues(it, idx) {
     var d = it.data || {};
     return {
       1: idx + 1, 2: d["제품코드"] || "", 3: d["제 조 사"] || "", 4: d["발  주  처"] || "",
-      5: d["출 력 명"] || "", 6: d["규  격"] || "", 7: it.qty, 9: fmtExp(it.exp),
+      5: d["출 력 명"] || "", 6: d["규  격"] || "", 7: it.qty, 9: excelExp(it.exp),
       10: settings.client || "", 11: settings.pharm || "", 12: settings.worker || "", 13: settings.date || "",
       14: num(d["기준단가"]), 15: d["거래처도매"] || "", 16: d["기준가격×계산단위"] || "", 17: d["보험코드"] || "",
       18: d["제품명"] || "", 19: d["제품구분"] || "", 20: d["단위"] || "", 21: d["성분분류"] || "",
@@ -545,7 +552,7 @@
     var d = it.data || {};
     return {
       1: idx + 1, 2: d["제품코드"] || "", 3: d["제 조 사"] || "", 4: d["발  주  처"] || "",
-      5: d["출 력 명"] || "", 6: d["규  격"] || "", 7: it.qty, 9: fmtExp(it.exp),
+      5: d["출 력 명"] || "", 6: d["규  격"] || "", 7: it.qty, 9: excelExp(it.exp),
       10: settings.client || "", 11: settings.pharm || "", 12: settings.worker || "", 13: settings.date || "",
       14: num(d["기준단가"]), 15: d["거래처도매"] || "", 16: d["기준가격×계산단위"] || "", 17: d["보험코드"] || "",
       18: d["제품명"] || "", 19: d["제품구분"] || "", 20: d["단위"] || "", 21: d["성분분류"] || "",
@@ -571,72 +578,60 @@
     });
   }
 
-  // 시트2 채우기 (2행부터, 26열, 출력명 청색)
+  // 시트2 채우기 — 원본 양식 그대로 두고 2행부터 값만 채움. 남는 원본 행은 비움(서식 유지)
   function fillSheet2(ws) {
-    var DR = 2, sample = ws.getRow(DR), styles = [], h = sample.height, c;
+    var DR = 2, LAST = 33, sample = ws.getRow(DR), styles = [], h = sample.height, c;
     for (c = 1; c <= 26; c++) styles[c] = sample.getCell(c).style;
     var blue5 = cloneBlue(styles[5]);
-    items.forEach(function (it, idx) {
-      var r = DR + idx, row = ws.getRow(r), vals = rowValues2(it, idx), isBlue = !!BLUE[it.barcode];
-      for (var c = 1; c <= 26; c++) {
-        var cell = row.getCell(c);
-        if (c === 8) cell.value = { formula: "G" + r + "*N" + r };
-        else cell.value = (vals[c] === undefined || vals[c] === "") ? null : vals[c];
-        cell.style = (c === 5 && isBlue) ? blue5 : styles[c];
+    var rows = Math.max(LAST, DR + items.length - 1);
+    for (var i = 0; i <= rows - DR; i++) {
+      var r = DR + i, row = ws.getRow(r), it = items[i];
+      if (it) {
+        var vals = rowValues2(it, i), isBlue = !!BLUE[it.barcode];
+        for (c = 1; c <= 26; c++) {
+          var cell = row.getCell(c);
+          if (c === 8) cell.value = { formula: "G" + r + "*N" + r };
+          else cell.value = (vals[c] === undefined || vals[c] === "") ? null : vals[c];
+          cell.style = (c === 5 && isBlue) ? blue5 : styles[c];
+        }
+      } else {
+        for (c = 1; c <= 26; c++) { var ce = row.getCell(c); ce.value = null; ce.style = styles[c]; }
       }
       if (h) row.height = h;
-    });
+    }
   }
 
-  // 시트3 스티커 채우기. 블록=7행, 좌(1~4열)·우(7~10열) 2장, 타이틀행만 병합
+  // 시트3 스티커 — 원본 양식(셀크기·테두리·페이지나눔) 그대로. 32개 슬롯에 값만 채움/비움
+  // 슬롯 순서 = 시트2 행순서(2~33). 블록 16개(좌·우 2장), 페이지당 8블록
+  var STK_TOPS = [1, 8, 15, 22, 29, 36, 43, 50, 58, 65, 72, 79, 86, 93, 100, 107];
+  function stkPos(s) { // 슬롯 s(0~31) -> {top, bc(1=좌,7=우)}
+    var page = s < 16 ? 0 : 1, ps = s % 16, right = ps >= 8;
+    return { top: STK_TOPS[page * 8 + (ps % 8)], bc: right ? 7 : 1 };
+  }
   function fillSheet3(ws) {
-    var LCOL = [1, 3, 7, 9]; // 라벨칸(글자 고정)
-    // 템플릿 첫 블록(1~7행)의 스타일·높이·라벨 캡처
-    var tStyles = [], tHeights = [], tLabel = [], r, c;
-    for (r = 0; r < 7; r++) {
-      var trow = ws.getRow(1 + r);
-      tHeights[r] = trow.height;
-      tStyles[r] = {}; tLabel[r] = {};
-      for (c = 1; c <= 10; c++) {
-        if (r === 0 && (c === 2 || c === 8)) continue; // 병합 슬레이브
-        tStyles[r][c] = JSON.parse(JSON.stringify(trow.getCell(c).style || {}));
-        if (LCOL.indexOf(c) >= 0) tLabel[r][c] = trow.getCell(c).value;
-      }
+    // 스티커 값칸 위치(블록행, 열offset). 라벨칸은 건드리지 않음
+    var VCELLS = [[0, 3], [1, 1], [1, 3], [2, 1], [2, 3], [3, 1], [3, 3], [4, 1], [5, 1]];
+    function setVal(top, bc, rr, cofs, val) {
+      ws.getCell(top + rr, bc + cofs).value = (val === "" || val == null) ? null : val;
     }
-    function fillSticker(T, bc, it) {
+    for (var s = 0; s < 32; s++) {
+      var p = stkPos(s), it = items[s];
+      if (!it) { // 빈 슬롯: 값칸만 비움(0 안 뜨게), 라벨·서식은 그대로
+        for (var k = 0; k < VCELLS.length; k++) ws.getCell(p.top + VCELLS[k][0], p.bc + VCELLS[k][1]).value = null;
+        continue;
+      }
       var d = it.data || {}, qty = it.qty, price = num(d["기준단가"]);
-      function put(rr, cofs, val) {
-        var cell = ws.getCell(T + rr, bc + cofs);
-        cell.value = (val === "" || val == null) ? null : val;
-        return cell;
-      }
-      put(0, 3, d["제품코드"] || "");                  // 분류번호
-      var nm = put(1, 1, d["출 력 명"] || d["제품명"] || ""); // 약품명
+      setVal(p.top, p.bc, 0, 3, d["제품코드"] || "");                  // 분류번호
+      var nm = ws.getCell(p.top + 1, p.bc + 1);                        // 약품명
+      nm.value = d["출 력 명"] || d["제품명"] || "";
       if (BLUE[it.barcode]) nm.style = cloneBlue(nm.style);
-      put(1, 3, price || "");                           // 단가
-      put(2, 1, d["발  주  처"] || d["제 조 사"] || ""); // 제약회사
-      put(2, 3, (qty * price) || "");                   // 반품금액
-      put(3, 1, settings.client || "");                 // 거래처
-      put(3, 3, settings.pharm || "");                  // 약국명
-      put(4, 1, fmtExp(it.exp));                         // 유효기간
-      put(5, 1, qty);                                   // 반품수량
-    }
-    var blocks = Math.ceil(items.length / 2);
-    for (var b = 0; b < blocks; b++) {
-      var T = 1 + b * 7;
-      for (r = 0; r < 7; r++) {
-        var row = ws.getRow(T + r);
-        if (tHeights[r] != null) row.height = tHeights[r];
-        for (c = 1; c <= 10; c++) {
-          if (r === 0 && (c === 2 || c === 8)) continue;
-          var cell = row.getCell(c);
-          cell.style = tStyles[r][c];
-          cell.value = (tLabel[r] && tLabel[r][c] != null) ? tLabel[r][c] : null;
-        }
-      }
-      if (b > 0) { ws.mergeCells(T, 1, T, 2); ws.mergeCells(T, 7, T, 8); }
-      fillSticker(T, 1, items[b * 2]);
-      if (items[b * 2 + 1]) fillSticker(T, 7, items[b * 2 + 1]);
+      setVal(p.top, p.bc, 1, 3, price || "");                          // 단가
+      setVal(p.top, p.bc, 2, 1, d["발  주  처"] || d["제 조 사"] || ""); // 제약회사
+      setVal(p.top, p.bc, 2, 3, (qty * price) || "");                  // 반품금액
+      setVal(p.top, p.bc, 3, 1, settings.client || "");                // 거래처
+      setVal(p.top, p.bc, 3, 3, settings.pharm || "");                 // 약국명
+      setVal(p.top, p.bc, 4, 1, excelExp(it.exp));                      // 유효기간
+      setVal(p.top, p.bc, 5, 1, qty);                                  // 반품수량
     }
   }
 
@@ -655,7 +650,7 @@
       var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       var fname = buildFilename();
       downloadBlob(blob, fname);
-      toast("엑셀 저장: " + fname);
+      toast(items.length > 32 ? "엑셀 저장(스티커는 32개까지): " + fname : "엑셀 저장: " + fname);
     }).catch(function (e) { toast("엑셀 생성 오류"); console.error(e); });
   }
 
