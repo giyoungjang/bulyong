@@ -93,7 +93,7 @@
     return res;
   }
 
-  var APP_VERSION = "v18";
+  var APP_VERSION = "v19";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
@@ -593,11 +593,11 @@
     });
   }
 
-  // 시트2 채우기 — 2행부터 값 채움. 표시 대상이면 행 전체 굵게+색상. 남는 원본 행(빈칸)은 삭제
+  // 시트2 채우기 — 2행부터 입력 품목만 채움(템플릿은 머리글+1행뿐이라 빈 행이 안 남음)
+  // 표시 대상이면 행 전체 굵게+색상
   function fillSheet2(ws) {
-    var DR = 2, LAST = 33, sample = ws.getRow(DR), styles = [], blues = [], h = sample.height, c;
+    var DR = 2, sample = ws.getRow(DR), styles = [], blues = [], h = sample.height, c;
     for (c = 1; c <= 26; c++) { styles[c] = sample.getCell(c).style; blues[c] = cloneBlue(styles[c]); }
-    var n = items.length;
     items.forEach(function (it, i) {
       var r = DR + i, row = ws.getRow(r), vals = rowValues2(it, i), isBlue = !!BLUE[it.barcode];
       for (var c = 1; c <= 26; c++) {
@@ -608,8 +608,6 @@
       }
       if (h) row.height = h;
     });
-    // 원본 샘플 행이 데이터보다 많으면 남는 빈 행 삭제
-    if (n < LAST - DR + 1) ws.spliceRows(DR + n, (LAST - DR + 1) - n);
   }
 
   // 시트3 스티커 — 원본 양식(셀크기·테두리·페이지나눔) 그대로. 32개 슬롯에 값만 채움/비움
@@ -644,12 +642,12 @@
       setVal(p.top, p.bc, 3, 3, settings.pharm || "");                 // 약국명
       setVal(p.top, p.bc, 4, 1, excelExp(it.exp));                      // 유효기간
       setVal(p.top, p.bc, 5, 1, qty);                                  // 반품수량
-      // 표시 대상이면 스티커 전체 굵게+색상
+      // 표시 대상이면 타이틀행만: "불용재고의약품" · "분류번호" · 분류번호숫자
       if (BLUE[it.barcode]) {
-        for (var rr = 0; rr < 6; rr++) for (var co = 0; co < 4; co++) {
-          var cc = ws.getCell(p.top + rr, p.bc + co);
+        [0, 2, 3].forEach(function (co) {
+          var cc = ws.getCell(p.top, p.bc + co);
           cc.style = cloneBlue(cc.style);
-        }
+        });
       }
     }
   }
