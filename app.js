@@ -58,8 +58,9 @@
     return res;
   }
 
+  var APP_VERSION = "v3";
   var badge = document.getElementById("dataBadge");
-  badge.textContent = DATA.rows.length.toLocaleString() + "품목 로드됨";
+  badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
   // ---------- 상태 (localStorage) ----------
   var LSK = "bulyong_items_v1";
@@ -400,8 +401,20 @@
   // ---------- 시작 ----------
   render();
 
-  // PWA 서비스워커
+  // PWA 서비스워커 (새 버전 배포 시 자동 갱신)
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js").catch(function () {});
+    var refreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", function () {
+      if (refreshing) return; refreshing = true; location.reload();
+    });
+    navigator.serviceWorker.register("sw.js").then(function (reg) {
+      reg.update();
+      reg.addEventListener("updatefound", function () {
+        var nw = reg.installing;
+        if (nw) nw.addEventListener("statechange", function () {
+          if (nw.state === "installed" && navigator.serviceWorker.controller) toast("새 버전으로 갱신 중…");
+        });
+      });
+    }).catch(function () {});
   }
 })();

@@ -1,5 +1,8 @@
-/* 오프라인 캐시 (PWA) */
-var CACHE = "bulyong-v1";
+/* 오프라인 캐시 (PWA)
+   - 코드/페이지: 네트워크 우선(온라인이면 항상 최신) → 오프라인이면 캐시
+   - data.js: 용량이 커서 캐시 우선(월 1회 갱신 시 버전만 올리면 새로 받음) */
+var VERSION = "v3";
+var CACHE = "bulyong-" + VERSION;
 var CORE = [
   "./", "./index.html", "./style.css", "./app.js", "./data.js",
   "./manifest.webmanifest", "./icon.svg",
@@ -23,16 +26,35 @@ self.addEventListener("activate", function (e) {
   );
 });
 
+function isData(req) {
+  return /data\.js(\?|$)/.test(req.url);
+}
+
 self.addEventListener("fetch", function (e) {
   if (e.request.method !== "GET") return;
+
+  if (isData(e.request)) {
+    // 캐시 우선
+    e.respondWith(
+      caches.match(e.request).then(function (hit) {
+        return hit || fetch(e.request).then(function (res) {
+          var copy = res.clone();
+          caches.open(CACHE).then(function (c) { try { c.put(e.request, copy); } catch (x) {} });
+          return res;
+        });
+      })
+    );
+    return;
+  }
+
+  // 네트워크 우선 (코드/페이지) → 실패 시 캐시
   e.respondWith(
-    caches.match(e.request).then(function (hit) {
-      if (hit) return hit;
-      return fetch(e.request).then(function (res) {
-        var copy = res.clone();
-        caches.open(CACHE).then(function (c) { try { c.put(e.request, copy); } catch (x) {} });
-        return res;
-      }).catch(function () { return hit; });
+    fetch(e.request).then(function (res) {
+      var copy = res.clone();
+      caches.open(CACHE).then(function (c) { try { c.put(e.request, copy); } catch (x) {} });
+      return res;
+    }).catch(function () {
+      return caches.match(e.request);
     })
   );
 });
