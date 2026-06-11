@@ -93,7 +93,7 @@
     return res;
   }
 
-  var APP_VERSION = "v12";
+  var APP_VERSION = "v13";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
@@ -320,10 +320,10 @@
   function render() {
     listEl.innerHTML = "";
     emptyHint.classList.toggle("hide", items.length > 0);
-    var totQty = 0;
+    var totAmount = 0;
     items.forEach(function (it, i) {
-      totQty += it.qty;
       var d = it.data || {};
+      totAmount += it.qty * num(d["기준단가"]);
       var name = d["출 력 명"] || d["제품명"] || it.barcode;
       var st = expiryStatus(it.exp);
       var expTxt = it.exp ? fmtExp(it.exp) : "유효기간 미입력";
@@ -343,8 +343,7 @@
       });
       listEl.appendChild(div);
     });
-    document.getElementById("totLines").textContent = items.length;
-    document.getElementById("totQty").textContent = totQty;
+    document.getElementById("totAmount").textContent = Math.round(totAmount).toLocaleString();
   }
 
   function esc(s) {
