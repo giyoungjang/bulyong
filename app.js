@@ -92,7 +92,7 @@
     return res;
   }
 
-  var APP_VERSION = "v10";
+  var APP_VERSION = "v11";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
@@ -204,36 +204,69 @@
       '<div class="code">' + esc(rec["표준코드"]) + '</div>' +
       '<div class="fields">' +
         '<label>소분수량<input id="inQty" type="number" inputmode="numeric" min="1" placeholder="수량 입력"></label>' +
-        '<label>유효기간<input id="inExp" type="date"></label>' +
       '</div>' +
+      '<label class="explbl">유효기간' +
+        '<div class="ymd">' +
+          '<select id="inExpY"></select>' +
+          '<select id="inExpM"></select>' +
+          '<select id="inExpD"></select>' +
+        '</div>' +
+      '</label>' +
       '<div class="warnmsg hide" id="expWarn">⚠ 유효기간이 2020~2026.06 범위를 벗어납니다. 받지 않는 제품일 수 있어요.</div>' +
       '<button class="addbtn" id="btnAdd">＋ 목록에 추가</button>' +
       '</div>';
 
-    var inExp = document.getElementById("inExp");
     var inQty = document.getElementById("inQty");
+    var inY = document.getElementById("inExpY");
+    var inM = document.getElementById("inExpM");
+    var inD = document.getElementById("inExpD");
     var warn = document.getElementById("expWarn");
-    inExp.addEventListener("input", function () {
-      var st = expiryStatus(inExp.value);
-      inExp.classList.toggle("warn", st === "bad");
-      warn.classList.toggle("hide", st !== "bad");
-    });
+    fillSelect(inY, 2020, 2030, "년");
+    fillSelect(inM, 1, 12, "월");
+    fillSelect(inD, 1, 31, "일");
+
+    function expVal() { // 선택값 -> "YYYY-MM-DD" (월까지만 골랐으면 "YYYY-MM")
+      if (!inY.value || !inM.value) return "";
+      return inY.value + "-" + inM.value + (inD.value ? "-" + inD.value : "");
+    }
+    function refreshExp() {
+      var st = expiryStatus(expVal());
+      var bad = st === "bad";
+      inY.classList.toggle("warn", bad); inM.classList.toggle("warn", bad);
+      warn.classList.toggle("hide", !bad);
+    }
+    inY.addEventListener("change", refreshExp);
+    inM.addEventListener("change", refreshExp);
+    inD.addEventListener("change", refreshExp);
+
     document.getElementById("btnAdd").addEventListener("click", function () {
-      addItem(rec, inQty.value, inExp.value);
+      addItem(rec, inQty.value, expVal());
     });
     inQty.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") { e.preventDefault(); addItem(rec, inQty.value, inExp.value); }
+      if (e.key === "Enter") { e.preventDefault(); addItem(rec, inQty.value, expVal()); }
     });
     inQty.addEventListener("focus", function () { inQty.select(); });
-    // 2D코드에서 유효기간을 읽었으면 자동 입력
+    // 2D코드에서 유효기간을 읽었으면 자동 선택
     if (autoExp) {
-      inExp.value = autoExp;
-      var st0 = expiryStatus(autoExp);
-      inExp.classList.toggle("warn", st0 === "bad");
-      warn.classList.toggle("hide", st0 !== "bad");
-      toast("유효기간 자동입력: " + autoExp);
+      var m = /^(\d{4})-(\d{2})(?:-(\d{2}))?/.exec(autoExp);
+      if (m) {
+        inY.value = m[1]; inM.value = m[2]; if (m[3]) inD.value = m[3];
+        refreshExp();
+        toast("유효기간 자동입력: " + fmtExp(autoExp));
+      }
     }
     inQty.focus();
+  }
+
+  // select에 옵션 채우기 (선두 빈칸 + start~end). 년=4자리값, 월·일=2자리값
+  function fillSelect(sel, start, end, label) {
+    var isYear = (label === "년");
+    var html = '<option value="">' + label + '</option>';
+    for (var n = start; n <= end; n++) {
+      var val = isYear ? String(n) : (n < 10 ? "0" : "") + n;
+      html += '<option value="' + val + '">' + n + label + '</option>';
+    }
+    sel.innerHTML = html;
   }
 
   function addItem(rec, qtyRaw, exp) {

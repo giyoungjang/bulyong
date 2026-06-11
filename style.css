@@ -61,6 +61,12 @@ button:disabled{opacity:.5}
 .fields input.warn{border-color:var(--amber);background:#2a1a05}
 .warnmsg{color:#fbbf24;font-size:13px;margin-top:8px}
 
+.explbl{display:block;font-size:12px;color:#cbd5e1;margin-top:14px}
+.ymd{display:flex;gap:8px;margin-top:5px}
+.ymd select{flex:1;min-width:0;font-size:18px;padding:12px 8px;border-radius:10px;
+  border:1px solid var(--line);background:#0b1220;color:#fff;-webkit-appearance:none;appearance:none;text-align:center}
+.ymd select.warn{border-color:var(--amber);background:#2a1a05}
+
 .addbtn{margin-top:14px;background:var(--green)}
 
 .listhead{display:flex;align-items:center;margin:18px 0 8px}
