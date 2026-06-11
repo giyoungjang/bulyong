@@ -93,7 +93,7 @@
     return res;
   }
 
-  var APP_VERSION = "v14";
+  var APP_VERSION = "v15";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
@@ -209,71 +209,67 @@
       '<div class="code">' + esc(rec["표준코드"]) + '</div>' +
       '<div class="fields">' +
         '<label>소분수량<input id="inQty" type="number" inputmode="numeric" min="1" placeholder="수량 입력"></label>' +
+        '<label>유효기간<input id="inExp" type="text" inputmode="numeric" placeholder="예: 27.02.01"></label>' +
       '</div>' +
-      '<label class="explbl">유효기간' +
-        '<div class="ymd">' +
-          '<select id="inExpY"></select>' +
-          '<select id="inExpM"></select>' +
-          '<select id="inExpD"></select>' +
-        '</div>' +
-      '</label>' +
       '<div class="warnmsg hide" id="expWarn">⚠ 유효기간이 2020~2026.06 범위를 벗어납니다. 받지 않는 제품일 수 있어요.</div>' +
       '<button class="addbtn" id="btnAdd">' + (editing ? "✔ 수정 저장" : "＋ 목록에 추가") + '</button>' +
       '</div>';
 
     var inQty = document.getElementById("inQty");
-    var inY = document.getElementById("inExpY");
-    var inM = document.getElementById("inExpM");
-    var inD = document.getElementById("inExpD");
+    var inExp = document.getElementById("inExp");
     var warn = document.getElementById("expWarn");
-    fillSelect(inY, 2020, 2030, "년");
-    fillSelect(inM, 1, 12, "월");
-    fillSelect(inD, 1, 31, "일");
-    inD.value = "01"; // 일 기본 01 → 2027.03.01 형태로 깔끔하게
 
-    function expVal() { // 선택값 -> "YYYY-MM-DD" (월까지만 골랐으면 "YYYY-MM")
-      if (!inY.value || !inM.value) return "";
-      return inY.value + "-" + inM.value + (inD.value ? "-" + inD.value : "");
-    }
+    function expVal() { return parseExpText(inExp.value); }
     function refreshExp() {
-      var st = expiryStatus(expVal());
-      var bad = st === "bad";
-      inY.classList.toggle("warn", bad); inM.classList.toggle("warn", bad);
+      var bad = expiryStatus(expVal()) === "bad";
+      inExp.classList.toggle("warn", bad);
       warn.classList.toggle("hide", !bad);
     }
-    inY.addEventListener("change", refreshExp);
-    inM.addEventListener("change", refreshExp);
-    inD.addEventListener("change", refreshExp);
+    inExp.addEventListener("input", refreshExp);
 
     function commit() { addItem(rec, inQty.value, expVal(), editIdx); }
     document.getElementById("btnAdd").addEventListener("click", commit);
     inQty.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); inExp.focus(); } // 수량 → 유효기간으로
+    });
+    inExp.addEventListener("keydown", function (e) {
       if (e.key === "Enter") { e.preventDefault(); commit(); }
     });
     inQty.addEventListener("focus", function () { inQty.select(); });
+    inExp.addEventListener("focus", function () { inExp.select(); });
 
-    // 유효기간 미리 채우기(2D코드 자동 / 수정 시 기존값)
+    // 유효기간 미리 채우기(2D코드 자동 / 수정 시 기존값) → "YY.MM.DD"
     if (opts.autoExp) {
-      var m = /^(\d{4})-(\d{2})(?:-(\d{2}))?/.exec(opts.autoExp);
-      if (m) {
-        inY.value = m[1]; inM.value = m[2]; inD.value = m[3] || "01";
-        refreshExp();
-        if (!editing) toast("유효기간 자동입력: " + fmtExp(opts.autoExp));
-      }
+      inExp.value = toExpText(opts.autoExp);
+      refreshExp();
+      if (!editing && inExp.value) toast("유효기간 자동입력: " + fmtExp(opts.autoExp));
     }
     if (opts.qty != null) inQty.value = opts.qty;
     inQty.focus();
   }
 
-  // select에 옵션 채우기 (선두 빈칸 + start~end). 년=4자리값, 월·일=2자리값
-  function fillSelect(sel, start, end, label) {
-    var isYear = (label === "년");
-    var html = '<option value="">' + label + '</option>';
-    for (var n = start; n <= end; n++) {
-      var val = isYear ? String(n) : (n < 10 ? "0" : "") + n;
-      html += '<option value="' + val + '">' + n + label + '</option>';
+  // "27.02.01"·"2027.2.1"·"270201" 등 → "YYYY-MM-DD" (일 없으면 01)
+  function parseExpText(s) {
+    s = String(s == null ? "" : s).trim();
+    if (!s) return "";
+    var m = /^(\d{2}|\d{4})[.\-/ ](\d{1,2})(?:[.\-/ ](\d{1,2}))?$/.exec(s);
+    if (!m) {
+      var only = s.replace(/\D/g, "");
+      if (only.length === 6) m = [s, only.slice(0, 2), only.slice(2, 4), only.slice(4, 6)];
+      else if (only.length === 8) m = [s, only.slice(0, 4), only.slice(4, 6), only.slice(6, 8)];
+      else return "";
     }
-    sel.innerHTML = html;
+    var y = m[1].length === 2 ? "20" + m[1] : m[1];
+    var mo = ("0" + m[2]).slice(-2);
+    var da = m[3] ? ("0" + m[3]).slice(-2) : "01";
+    return y + "-" + mo + "-" + da;
+  }
+
+  // "YYYY-MM-DD" → 입력창 표시용 "YY.MM.DD"
+  function toExpText(iso) {
+    var m = /^(\d{4})-(\d{2})(?:-(\d{2}))?/.exec(String(iso || ""));
+    if (!m) return "";
+    return m[1].slice(2) + "." + m[2] + "." + (m[3] || "01");
   }
 
   function addItem(rec, qtyRaw, exp, editIdx) {
