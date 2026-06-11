@@ -18,6 +18,46 @@
     return rec;
   }
 
+  // 13/14자리, 앞 0 보정 등 여러 형태로 조회 시도
+  function lookupSmart(code) {
+    var c = String(code == null ? "" : code).replace(/\D/g, "");
+    if (!c) return null;
+    var tries = [c];
+    if (c.length >= 13) tries.push(c.slice(-13));   // GTIN-14 -> EAN-13
+    if (c.length === 13) tries.push("0" + c);
+    for (var k = 0; k < tries.length; k++) {
+      var idx = DATA.index[tries[k]];
+      if (idx !== undefined && idx !== null) return { bc: tries[k], rec: lookup(tries[k]) };
+    }
+    return null;
+  }
+
+  // 의약품 2D(DataMatrix) GS1 코드 파싱: (01)GTIN (17)유효기간 (10)로트 (21)일련번호
+  function parseGS1(raw) {
+    if (raw == null) return null;
+    var s = String(raw);
+    if (s.charAt(0) === "]") s = s.substring(3); // 심볼로지 식별자 ]d2 / ]Q1 등 제거
+    var GS = String.fromCharCode(29);
+    if (!/^\d{2}/.test(s)) return null;
+    var FIXED = { "00": 18, "01": 14, "02": 14, "03": 14, "11": 6, "12": 6, "13": 6, "15": 6, "16": 6, "17": 6, "20": 2 };
+    var VAR = { "10": 1, "21": 1, "22": 1, "30": 1, "37": 1, "90": 1, "91": 1, "92": 1, "93": 1, "99": 1 };
+    var out = {}, i = 0, guard = 0;
+    while (i < s.length && guard++ < 40) {
+      if (s.charAt(i) === GS) { i++; continue; }
+      var ai = s.substr(i, 2);
+      if (FIXED[ai] !== undefined) {
+        out[ai] = s.substr(i + 2, FIXED[ai]); i += 2 + FIXED[ai];
+      } else if (VAR[ai] !== undefined) {
+        var st = i + 2, g = s.indexOf(GS, st); if (g < 0) g = s.length;
+        out[ai] = s.substring(st, g); i = g;
+      } else { break; }
+    }
+    if (out["01"] === undefined) return null;
+    var res = { gtin: out["01"], lot: out["10"], serial: out["21"] };
+    if (out["17"] && /^\d{6}$/.test(out["17"])) res.expiry = "20" + out["17"].substr(0, 2) + "-" + out["17"].substr(2, 2);
+    return res;
+  }
+
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 로드됨";
 
@@ -84,18 +124,25 @@
 
   // ---------- 조회 결과 표시 ----------
   function showResult(barcode) {
-    var rec = lookup(barcode);
     pending = null;
-    if (!rec) {
+    // 2D(DataMatrix) GS1 코드면 GTIN/유효기간 추출, 아니면 그대로 바코드로 사용
+    var g = parseGS1(barcode);
+    var codeForLookup = g && g.gtin ? g.gtin : barcode;
+    var autoExp = g && g.expiry ? g.expiry : "";
+    var match = lookupSmart(codeForLookup);
+    var shownCode = String(codeForLookup).replace(/\D/g, "") || String(barcode);
+
+    if (!match) {
       beep(false);
       if (navigator.vibrate) navigator.vibrate(200);
       resultBox.innerHTML =
         '<div class="result no"><div class="tag">✕ 받지 않는 품목</div>' +
         '<div class="name">파일에 없는 제품입니다</div>' +
         '<div class="sub">이 바코드는 받는 품목 목록에 없습니다.</div>' +
-        '<div class="code">' + esc(barcode) + '</div></div>';
+        '<div class="code">' + esc(shownCode) + '</div></div>';
       return;
     }
+    var rec = match.rec;
     beep(true);
     if (navigator.vibrate) navigator.vibrate(60);
     pending = rec;
@@ -125,6 +172,14 @@
     document.getElementById("btnAdd").addEventListener("click", function () {
       addItem(rec, inQty.value, inExp.value);
     });
+    // 2D코드에서 유효기간을 읽었으면 자동 입력
+    if (autoExp) {
+      inExp.value = autoExp;
+      var st0 = expiryStatus(autoExp);
+      inExp.classList.toggle("warn", st0 === "bad");
+      warn.classList.toggle("hide", st0 !== "bad");
+      toast("유효기간 자동입력: " + autoExp);
+    }
     inQty.focus();
   }
 
@@ -210,16 +265,25 @@
     readerEl.classList.remove("hide");
     scanner = new Html5Qrcode("reader", {
       formatsToSupport: [
+        Html5QrcodeSupportedFormats.DATA_MATRIX,  // 의약품 일련번호 2D코드
+        Html5QrcodeSupportedFormats.QR_CODE,
+        Html5QrcodeSupportedFormats.AZTEC,
         Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
         Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.UPC_E,
         Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39,
         Html5QrcodeSupportedFormats.ITF
-      ]
+      ],
+      experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+      verbose: false
     });
     var config = {
       fps: 10,
-      qrbox: function (w) { return { width: Math.min(w - 24, 380), height: 170 }; },
-      aspectRatio: 1.3
+      // 2D(네모) 코드와 1D 바코드 모두 잡히도록 큰 정사각 인식영역
+      qrbox: function (w, h) {
+        var s = Math.floor(Math.min(w, h) * 0.75);
+        return { width: Math.max(180, Math.min(s, 300)), height: Math.max(180, Math.min(s, 300)) };
+      },
+      aspectRatio: 1.0
     };
     scanner.start({ facingMode: "environment" }, config, onScan, function () {})
       .then(function () { scanning = true; btnScan.textContent = "■ 스캔 중지"; btnScan.classList.add("sec"); })
