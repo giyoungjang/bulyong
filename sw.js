@@ -1,10 +1,10 @@
 /* 오프라인 캐시 (PWA)
    - 코드/페이지: 네트워크 우선(온라인이면 항상 최신) → 오프라인이면 캐시
    - data.js: 용량이 커서 캐시 우선(월 1회 갱신 시 버전만 올리면 새로 받음) */
-var VERSION = "v11";
+var VERSION = "v12";
 var CACHE = "bulyong-" + VERSION;
 var CORE = [
-  "./", "./index.html", "./style.css", "./app.js", "./data.js", "./template.js",
+  "./", "./index.html", "./style.css", "./app.js", "./data.js", "./template.js", "./blue.js",
   "./manifest.webmanifest", "./icon.svg",
   "https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js",
   "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"

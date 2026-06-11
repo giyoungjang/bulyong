@@ -6,6 +6,7 @@
   var DATA = window.PRODUCT_DATA || { cols: [], rows: [], index: {} };
   var COL = {};
   DATA.cols.forEach(function (c, i) { COL[c] = i; });
+  var BLUE = window.BLUE_CODES || {}; // 청색 출력명 표준코드 집합
 
   function lookup(barcode) {
     var bc = String(barcode || "").replace(/\s+/g, "").trim();
@@ -92,7 +93,7 @@
     return res;
   }
 
-  var APP_VERSION = "v11";
+  var APP_VERSION = "v12";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
@@ -189,16 +190,20 @@
     }
     beep(true);
     if (navigator.vibrate) navigator.vibrate(60);
-    renderMatch(match.rec, autoExp);
+    renderMatch(match.rec, { autoExp: autoExp });
   }
 
-  // 받는 품목 카드 렌더(수량·유효기간 입력) — 스캔/검색 공용
-  function renderMatch(rec, autoExp) {
+  // 받는 품목 카드 렌더(수량·유효기간 입력) — 스캔/검색/수정 공용
+  // opts: { autoExp:"YYYY-MM-DD", editIdx:번호(수정시), qty:기존수량 }
+  function renderMatch(rec, opts) {
+    opts = opts || {};
+    var editIdx = (opts.editIdx == null) ? null : opts.editIdx;
+    var editing = editIdx != null;
     pending = rec;
     var name = rec["출 력 명"] || rec["제품명"] || "(이름없음)";
     var price = rec["기준단가"] ? (Number(rec["기준단가"]).toLocaleString() + "원") : "-";
     resultBox.innerHTML =
-      '<div class="result ok"><div class="tag">✓ 받는 품목</div>' +
+      '<div class="result ok"><div class="tag">' + (editing ? "✏ 항목 수정" : "✓ 받는 품목") + '</div>' +
       '<div class="name">' + esc(name) + '</div>' +
       '<div class="sub">' + esc(rec["규  격"] || "") + ' · ' + esc(rec["제 조 사"] || "") + ' · 단가 ' + price + '</div>' +
       '<div class="code">' + esc(rec["표준코드"]) + '</div>' +
@@ -213,7 +218,7 @@
         '</div>' +
       '</label>' +
       '<div class="warnmsg hide" id="expWarn">⚠ 유효기간이 2020~2026.06 범위를 벗어납니다. 받지 않는 제품일 수 있어요.</div>' +
-      '<button class="addbtn" id="btnAdd">＋ 목록에 추가</button>' +
+      '<button class="addbtn" id="btnAdd">' + (editing ? "✔ 수정 저장" : "＋ 목록에 추가") + '</button>' +
       '</div>';
 
     var inQty = document.getElementById("inQty");
@@ -224,6 +229,7 @@
     fillSelect(inY, 2020, 2030, "년");
     fillSelect(inM, 1, 12, "월");
     fillSelect(inD, 1, 31, "일");
+    inD.value = "01"; // 일 기본 01 → 2027.03.01 형태로 깔끔하게
 
     function expVal() { // 선택값 -> "YYYY-MM-DD" (월까지만 골랐으면 "YYYY-MM")
       if (!inY.value || !inM.value) return "";
@@ -239,22 +245,23 @@
     inM.addEventListener("change", refreshExp);
     inD.addEventListener("change", refreshExp);
 
-    document.getElementById("btnAdd").addEventListener("click", function () {
-      addItem(rec, inQty.value, expVal());
-    });
+    function commit() { addItem(rec, inQty.value, expVal(), editIdx); }
+    document.getElementById("btnAdd").addEventListener("click", commit);
     inQty.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") { e.preventDefault(); addItem(rec, inQty.value, expVal()); }
+      if (e.key === "Enter") { e.preventDefault(); commit(); }
     });
     inQty.addEventListener("focus", function () { inQty.select(); });
-    // 2D코드에서 유효기간을 읽었으면 자동 선택
-    if (autoExp) {
-      var m = /^(\d{4})-(\d{2})(?:-(\d{2}))?/.exec(autoExp);
+
+    // 유효기간 미리 채우기(2D코드 자동 / 수정 시 기존값)
+    if (opts.autoExp) {
+      var m = /^(\d{4})-(\d{2})(?:-(\d{2}))?/.exec(opts.autoExp);
       if (m) {
-        inY.value = m[1]; inM.value = m[2]; if (m[3]) inD.value = m[3];
+        inY.value = m[1]; inM.value = m[2]; inD.value = m[3] || "01";
         refreshExp();
-        toast("유효기간 자동입력: " + fmtExp(autoExp));
+        if (!editing) toast("유효기간 자동입력: " + fmtExp(opts.autoExp));
       }
     }
+    if (opts.qty != null) inQty.value = opts.qty;
     inQty.focus();
   }
 
@@ -269,29 +276,44 @@
     sel.innerHTML = html;
   }
 
-  function addItem(rec, qtyRaw, exp) {
+  function addItem(rec, qtyRaw, exp, editIdx) {
     var qty = parseInt(qtyRaw, 10);
     if (!qty || qty < 1) { toast("수량을 입력하세요"); return; }
     var bc = rec["표준코드"];
-    // 같은 바코드+유효기간이면 수량 합산
-    var found = null;
-    for (var i = 0; i < items.length; i++) {
-      if (items[i].barcode === bc && (items[i].exp || "") === (exp || "")) { found = items[i]; break; }
-    }
-    if (found) {
-      found.qty += qty;
-      toast("기존 항목에 합산 (+" + qty + ")");
+    if (editIdx != null && items[editIdx]) {
+      // 수정: 해당 항목의 수량·유효기간만 갱신
+      items[editIdx].qty = qty;
+      items[editIdx].exp = exp || "";
+      toast("수정되었습니다");
     } else {
-      var rowdata = {};
-      DATA.cols.forEach(function (c) { rowdata[c] = rec[c]; });
-      items.push({ barcode: bc, qty: qty, exp: exp || "", data: rowdata });
-      toast("추가됨");
+      // 같은 바코드+유효기간이면 수량 합산
+      var found = null;
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].barcode === bc && (items[i].exp || "") === (exp || "")) { found = items[i]; break; }
+      }
+      if (found) {
+        found.qty += qty;
+        toast("기존 항목에 합산 (+" + qty + ")");
+      } else {
+        var rowdata = {};
+        DATA.cols.forEach(function (c) { rowdata[c] = rec[c]; });
+        items.push({ barcode: bc, qty: qty, exp: exp || "", data: rowdata });
+        toast("추가됨");
+      }
     }
     save();
     render();
     resultBox.innerHTML = "";
     pending = null;
     var mi = document.getElementById("manualInput"); if (mi) mi.value = "";
+  }
+
+  // 목록 항목 클릭 → 수정 카드 열기
+  function editItem(i) {
+    var it = items[i];
+    if (!it) return;
+    renderMatch(it.data || {}, { autoExp: it.exp, editIdx: i, qty: it.qty });
+    resultBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
   // ---------- 목록 렌더 ----------
@@ -310,11 +332,12 @@
       div.className = "item";
       div.innerHTML =
         '<div class="seq">' + (i + 1) + '</div>' +
-        '<div class="info"><div class="t">' + esc(name) + '</div>' +
+        '<div class="info" title="클릭하면 수량·유효기간 수정"><div class="t">' + esc(name) + '</div>' +
         '<div class="d">' + esc(d["규  격"] || "") + ' · ' + esc(it.barcode) + '</div>' +
-        '<div class="d' + badClass + '">유효기간 ' + esc(expTxt) + (st === "bad" ? " (범위밖)" : "") + '</div></div>' +
+        '<div class="d' + badClass + '">유효기간 ' + esc(expTxt) + (st === "bad" ? " (범위밖)" : "") + ' ✏</div></div>' +
         '<div class="qty">' + it.qty + '</div>' +
         '<button class="x" data-i="' + i + '">✕</button>';
+      div.querySelector(".info").addEventListener("click", function () { editItem(i); });
       div.querySelector(".x").addEventListener("click", function () {
         if (confirm("삭제할까요?\n" + name)) { items.splice(i, 1); save(); render(); }
       });
@@ -500,7 +523,15 @@
       .filter(function (x) { return x; });
     return (parts.join(".") || "불용재고") + ".xlsx";
   }
-  // 데이터 -> 템플릿 행값 (열번호:값). 8열(금액)은 수식으로 별도 처리
+  var BLUE_RGB = "FF333399"; // 원본 시트1의 청색 출력명 글씨색
+  // 청색 글씨 스타일(원본 서식 복제 후 글자색만 청색으로)
+  function cloneBlue(st) {
+    var s = st ? JSON.parse(JSON.stringify(st)) : {};
+    s.font = Object.assign({}, s.font || {}, { color: { argb: BLUE_RGB } });
+    return s;
+  }
+
+  // 시트1(상세) 행값 — 27열. 8열(금액)은 수식 별도 처리
   function rowValues(it, idx) {
     var d = it.data || {};
     return {
@@ -514,27 +545,116 @@
     };
   }
 
-  // 원본 시트1 양식(템플릿)에 데이터만 채워 내보내기 — 서식 그대로 보존
+  // 시트2(32품목 스티커) 행값 — 26열. 8열(금액)은 수식 별도 처리
+  function rowValues2(it, idx) {
+    var d = it.data || {};
+    return {
+      1: idx + 1, 2: d["제품코드"] || "", 3: d["제 조 사"] || "", 4: d["발  주  처"] || "",
+      5: d["출 력 명"] || "", 6: d["규  격"] || "", 7: it.qty, 9: fmtExp(it.exp),
+      10: settings.client || "", 11: settings.pharm || "", 12: settings.worker || "", 13: settings.date || "",
+      14: num(d["기준단가"]), 15: d["거래처도매"] || "", 16: d["기준가격×계산단위"] || "", 17: d["보험코드"] || "",
+      18: d["제품명"] || "", 19: d["제품구분"] || "", 20: d["단위"] || "", 21: d["성분분류"] || "",
+      22: d["제형구분"] || "", 23: d["제품그룹"] || "", 24: d["성 분"] || "", 25: d["신고계산단위"] || "",
+      26: d["표준코드"] || ""
+    };
+  }
+
+  // 시트1 채우기 (10행부터, 27열, 출력명 청색)
+  function fillSheet1(ws) {
+    var DR = 10, sample = ws.getRow(DR), styles = [], h = sample.height, c;
+    for (c = 1; c <= 27; c++) styles[c] = sample.getCell(c).style;
+    var blue5 = cloneBlue(styles[5]);
+    items.forEach(function (it, idx) {
+      var r = DR + idx, row = ws.getRow(r), vals = rowValues(it, idx), isBlue = !!BLUE[it.barcode];
+      for (var c = 1; c <= 27; c++) {
+        var cell = row.getCell(c);
+        if (c === 8) cell.value = { formula: "G" + r + "*N" + r };
+        else cell.value = (vals[c] === undefined || vals[c] === "") ? null : vals[c];
+        cell.style = (c === 5 && isBlue) ? blue5 : styles[c];
+      }
+      if (h) row.height = h;
+    });
+  }
+
+  // 시트2 채우기 (2행부터, 26열, 출력명 청색)
+  function fillSheet2(ws) {
+    var DR = 2, sample = ws.getRow(DR), styles = [], h = sample.height, c;
+    for (c = 1; c <= 26; c++) styles[c] = sample.getCell(c).style;
+    var blue5 = cloneBlue(styles[5]);
+    items.forEach(function (it, idx) {
+      var r = DR + idx, row = ws.getRow(r), vals = rowValues2(it, idx), isBlue = !!BLUE[it.barcode];
+      for (var c = 1; c <= 26; c++) {
+        var cell = row.getCell(c);
+        if (c === 8) cell.value = { formula: "G" + r + "*N" + r };
+        else cell.value = (vals[c] === undefined || vals[c] === "") ? null : vals[c];
+        cell.style = (c === 5 && isBlue) ? blue5 : styles[c];
+      }
+      if (h) row.height = h;
+    });
+  }
+
+  // 시트3 스티커 채우기. 블록=7행, 좌(1~4열)·우(7~10열) 2장, 타이틀행만 병합
+  function fillSheet3(ws) {
+    var LCOL = [1, 3, 7, 9]; // 라벨칸(글자 고정)
+    // 템플릿 첫 블록(1~7행)의 스타일·높이·라벨 캡처
+    var tStyles = [], tHeights = [], tLabel = [], r, c;
+    for (r = 0; r < 7; r++) {
+      var trow = ws.getRow(1 + r);
+      tHeights[r] = trow.height;
+      tStyles[r] = {}; tLabel[r] = {};
+      for (c = 1; c <= 10; c++) {
+        if (r === 0 && (c === 2 || c === 8)) continue; // 병합 슬레이브
+        tStyles[r][c] = JSON.parse(JSON.stringify(trow.getCell(c).style || {}));
+        if (LCOL.indexOf(c) >= 0) tLabel[r][c] = trow.getCell(c).value;
+      }
+    }
+    function fillSticker(T, bc, it) {
+      var d = it.data || {}, qty = it.qty, price = num(d["기준단가"]);
+      function put(rr, cofs, val) {
+        var cell = ws.getCell(T + rr, bc + cofs);
+        cell.value = (val === "" || val == null) ? null : val;
+        return cell;
+      }
+      put(0, 3, d["제품코드"] || "");                  // 분류번호
+      var nm = put(1, 1, d["출 력 명"] || d["제품명"] || ""); // 약품명
+      if (BLUE[it.barcode]) nm.style = cloneBlue(nm.style);
+      put(1, 3, price || "");                           // 단가
+      put(2, 1, d["발  주  처"] || d["제 조 사"] || ""); // 제약회사
+      put(2, 3, (qty * price) || "");                   // 반품금액
+      put(3, 1, settings.client || "");                 // 거래처
+      put(3, 3, settings.pharm || "");                  // 약국명
+      put(4, 1, fmtExp(it.exp));                         // 유효기간
+      put(5, 1, qty);                                   // 반품수량
+    }
+    var blocks = Math.ceil(items.length / 2);
+    for (var b = 0; b < blocks; b++) {
+      var T = 1 + b * 7;
+      for (r = 0; r < 7; r++) {
+        var row = ws.getRow(T + r);
+        if (tHeights[r] != null) row.height = tHeights[r];
+        for (c = 1; c <= 10; c++) {
+          if (r === 0 && (c === 2 || c === 8)) continue;
+          var cell = row.getCell(c);
+          cell.style = tStyles[r][c];
+          cell.value = (tLabel[r] && tLabel[r][c] != null) ? tLabel[r][c] : null;
+        }
+      }
+      if (b > 0) { ws.mergeCells(T, 1, T, 2); ws.mergeCells(T, 7, T, 8); }
+      fillSticker(T, 1, items[b * 2]);
+      if (items[b * 2 + 1]) fillSticker(T, 7, items[b * 2 + 1]);
+    }
+  }
+
+  // 원본 3개 시트(상세/스티커목록/스티커) 양식에 데이터를 채워 한 엑셀로 내보내기
   function exportXlsx() {
     if (!items.length) { toast("입력된 품목이 없습니다"); return; }
     if (!window.ExcelJS || !window.TEMPLATE_B64) { toast("엑셀 모듈 로딩 실패 (인터넷 확인)"); return; }
     toast("엑셀 만드는 중…");
-    var DATA_ROW = 10; // 템플릿: 9행 머리글, 10행부터 데이터
     var wb = new ExcelJS.Workbook();
     wb.xlsx.load(b64ToBuf(window.TEMPLATE_B64)).then(function () {
-      var ws = wb.worksheets[0];
-      var sample = ws.getRow(DATA_ROW), styles = [], h = sample.height;
-      for (var c = 1; c <= 27; c++) styles[c] = sample.getCell(c).style;
-      items.forEach(function (it, idx) {
-        var r = DATA_ROW + idx, row = ws.getRow(r), vals = rowValues(it, idx);
-        for (var c = 1; c <= 27; c++) {
-          var cell = row.getCell(c);
-          if (c === 8) cell.value = { formula: "G" + r + "*N" + r }; // 금액=소분수량×기준단가
-          else cell.value = (vals[c] === undefined || vals[c] === "") ? null : vals[c];
-          if (styles[c]) cell.style = styles[c];
-        }
-        if (h) row.height = h;
-      });
+      fillSheet1(wb.worksheets[0]);
+      fillSheet2(wb.worksheets[1]);
+      fillSheet3(wb.worksheets[2]);
       return wb.xlsx.writeBuffer();
     }).then(function (buf) {
       var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });

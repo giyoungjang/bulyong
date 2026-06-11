@@ -74,7 +74,8 @@ button:disabled{opacity:.5}
 .item{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin-bottom:8px;
   display:flex;align-items:center;gap:10px}
 .item .seq{color:var(--muted);font-size:12px;width:22px;text-align:right;flex:0 0 22px}
-.item .info{flex:1;min-width:0}
+.item .info{flex:1;min-width:0;cursor:pointer}
+.item .info:active{opacity:.6}
 .item .info .t{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .item .info .d{color:var(--muted);font-size:12px;margin-top:2px}
 .item .info .d.bad{color:#fbbf24}
