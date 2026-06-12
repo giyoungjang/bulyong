@@ -93,7 +93,7 @@
     return res;
   }
 
-  var APP_VERSION = "v22";
+  var APP_VERSION = "v23";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
@@ -429,9 +429,25 @@
   }
 
   // ---------- 카메라 스캔 ----------
-  var scanner = null, scanning = false, lastCode = "", lastTime = 0;
+  var scanner = null, scanning = false, switching = false, lastCode = "", lastTime = 0;
   var btnScan = document.getElementById("btnScan");
   var readerEl = document.getElementById("reader");
+  var camCtrls = document.getElementById("camCtrls");
+  var camHint = document.getElementById("camHint");
+  var camSel = document.getElementById("camSel");
+  var zoomRange = document.getElementById("zoomRange");
+  var curCamId = null;
+  try { curCamId = localStorage.getItem("bulyong_cam") || null; } catch (e) {}
+
+  var SCAN_CONFIG = {
+    fps: 10,
+    // 2D(네모) 코드와 1D 바코드 모두 잡히도록 큰 정사각 인식영역
+    qrbox: function (w, h) {
+      var s = Math.floor(Math.min(w, h) * 0.75);
+      return { width: Math.max(180, Math.min(s, 300)), height: Math.max(180, Math.min(s, 300)) };
+    },
+    aspectRatio: 1.0
+  };
 
   btnScan.addEventListener("click", function () {
     if (scanning) { stopScan(); } else { startScan(); }
@@ -453,17 +469,18 @@
       experimentalFeatures: { useBarCodeDetectorIfSupported: true },
       verbose: false
     });
-    var config = {
-      fps: 10,
-      // 2D(네모) 코드와 1D 바코드 모두 잡히도록 큰 정사각 인식영역
-      qrbox: function (w, h) {
-        var s = Math.floor(Math.min(w, h) * 0.75);
-        return { width: Math.max(180, Math.min(s, 300)), height: Math.max(180, Math.min(s, 300)) };
-      },
-      aspectRatio: 1.0
-    };
-    scanner.start({ facingMode: "environment" }, config, onScan, function () {})
-      .then(function () { scanning = true; btnScan.textContent = "■ 스캔 중지"; btnScan.classList.add("sec"); })
+    var camArg = curCamId ? { deviceId: { exact: curCamId } } : { facingMode: "environment" };
+    scanner.start(camArg, SCAN_CONFIG, onScan, function () {})
+      .then(onScanStarted)
+      .catch(function (err) {
+        // 저장된 카메라ID로 못 열면 기본 후면카메라로 재시도
+        if (curCamId) {
+          curCamId = null;
+          try { localStorage.removeItem("bulyong_cam"); } catch (e) {}
+          return scanner.start({ facingMode: "environment" }, SCAN_CONFIG, onScan, function () {}).then(onScanStarted);
+        }
+        throw err;
+      })
       .catch(function (err) {
         toast("카메라를 열 수 없습니다");
         readerEl.classList.add("hide");
@@ -471,12 +488,87 @@
       });
   }
 
+  function onScanStarted() {
+    scanning = true;
+    btnScan.textContent = "■ 스캔 중지";
+    btnScan.classList.add("sec");
+    camCtrls.classList.remove("hide");
+    camHint.classList.remove("hide");
+    populateCameras();
+    setupZoomFocus();
+  }
+
+  // 후면 카메라 목록 채우기 (권한 허용 후 라벨이 보임)
+  function populateCameras() {
+    if (!Html5Qrcode.getCameras) return;
+    Html5Qrcode.getCameras().then(function (cams) {
+      if (!cams || !cams.length) { camSel.parentElement.style.display = "none"; return; }
+      camSel.parentElement.style.display = "";
+      camSel.innerHTML = "";
+      cams.forEach(function (c, i) {
+        var o = document.createElement("option");
+        o.value = c.id;
+        o.textContent = c.label || ("카메라 " + (i + 1));
+        camSel.appendChild(o);
+      });
+      var activeId = curCamId;
+      if (!activeId) {
+        try { var st = scanner.getRunningTrackSettings(); if (st && st.deviceId) activeId = st.deviceId; } catch (e) {}
+      }
+      if (activeId) { camSel.value = activeId; if (camSel.value === activeId) curCamId = activeId; }
+    }).catch(function () {});
+  }
+
+  camSel.addEventListener("change", function () {
+    var id = camSel.value;
+    if (!id || switching) return;
+    curCamId = id;
+    try { localStorage.setItem("bulyong_cam", id); } catch (e) {}
+    switching = true;
+    scanner.stop().then(function () {
+      return scanner.start({ deviceId: { exact: id } }, SCAN_CONFIG, onScan, function () {});
+    }).then(function () {
+      switching = false;
+      setupZoomFocus();
+    }).catch(function (err) {
+      switching = false;
+      toast("카메라 전환 실패");
+      console.error(err);
+    });
+  });
+
+  // 연속 자동초점 + 확대(zoom) 슬라이더 설정
+  function setupZoomFocus() {
+    try { scanner.applyVideoConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(function () {}); } catch (e) {}
+    var caps = null;
+    try { caps = scanner.getRunningTrackCapabilities(); } catch (e) {}
+    if (caps && caps.zoom && typeof caps.zoom.max === "number") {
+      zoomRange.min = caps.zoom.min;
+      zoomRange.max = caps.zoom.max;
+      zoomRange.step = caps.zoom.step || 0.1;
+      var cur = caps.zoom.min;
+      try { var st = scanner.getRunningTrackSettings(); if (st && st.zoom) cur = st.zoom; } catch (e) {}
+      zoomRange.value = cur;
+      zoomRange.parentElement.style.display = "";
+    } else {
+      zoomRange.parentElement.style.display = "none";
+    }
+  }
+
+  zoomRange.addEventListener("input", function () {
+    var z = parseFloat(zoomRange.value);
+    if (!isFinite(z)) return;
+    try { scanner.applyVideoConstraints({ advanced: [{ zoom: z }] }).catch(function () {}); } catch (e) {}
+  });
+
   function stopScan() {
     if (scanner) {
       scanner.stop().then(function () { scanner.clear(); }).catch(function () {});
     }
     scanning = false;
     readerEl.classList.add("hide");
+    camCtrls.classList.add("hide");
+    camHint.classList.add("hide");
     btnScan.textContent = "📷 카메라 스캔 시작";
     btnScan.classList.remove("sec");
   }
