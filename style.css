@@ -30,6 +30,9 @@ button:disabled{opacity:.5}
 #reader video{width:100%!important;display:block}
 
 .scanbar{display:flex;gap:8px;margin-bottom:12px}
+.camctrls{display:flex;gap:8px;margin:-2px 0 10px}
+.camctrls button{flex:1}
+.camctrls button.on{background:var(--green);color:#fff}
 .manual{display:flex;gap:8px;margin:12px 0}
 .manual input{flex:1;font-size:18px;padding:13px;border-radius:12px;border:1px solid var(--line);
   background:var(--card);color:var(--text)}

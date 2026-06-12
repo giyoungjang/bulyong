@@ -93,7 +93,7 @@
     return res;
   }
 
-  var APP_VERSION = "v22";
+  var APP_VERSION = "v24";
   var badge = document.getElementById("dataBadge");
   badge.textContent = DATA.rows.length.toLocaleString() + "품목 · " + APP_VERSION;
 
@@ -430,8 +430,18 @@
 
   // ---------- 카메라 스캔 ----------
   var scanner = null, scanning = false, lastCode = "", lastTime = 0;
+  var macroOn = false;            // 접사 고정(근거리 수동초점) 사용 여부
   var btnScan = document.getElementById("btnScan");
   var readerEl = document.getElementById("reader");
+  var camCtrls = document.getElementById("camCtrls");
+  var btnMacro = document.getElementById("btnMacro");
+
+  // 고해상도 영상 요청: 작은/촘촘한 바코드를 더 또렷하게
+  var SCAN_VIDEO = {
+    facingMode: "environment",
+    width: { ideal: 2560 },
+    height: { ideal: 1440 }
+  };
 
   btnScan.addEventListener("click", function () {
     if (scanning) { stopScan(); } else { startScan(); }
@@ -460,10 +470,15 @@
         var s = Math.floor(Math.min(w, h) * 0.75);
         return { width: Math.max(180, Math.min(s, 300)), height: Math.max(180, Math.min(s, 300)) };
       },
-      aspectRatio: 1.0
+      aspectRatio: 1.0,
+      videoConstraints: SCAN_VIDEO
     };
-    scanner.start({ facingMode: "environment" }, config, onScan, function () {})
-      .then(function () { scanning = true; btnScan.textContent = "■ 스캔 중지"; btnScan.classList.add("sec"); })
+    scanner.start(SCAN_VIDEO, config, onScan, function () {})
+      .then(onScanStarted)
+      .catch(function (err) {
+        // 고해상도 요청이 거부되면 기본 후면카메라로 재시도
+        return scanner.start({ facingMode: "environment" }, config, onScan, function () {}).then(onScanStarted);
+      })
       .catch(function (err) {
         toast("카메라를 열 수 없습니다");
         readerEl.classList.add("hide");
@@ -471,12 +486,54 @@
       });
   }
 
+  function onScanStarted() {
+    scanning = true;
+    btnScan.textContent = "■ 스캔 중지";
+    btnScan.classList.add("sec");
+    applyFocus();
+    // 접사(수동초점) 지원하는 기기에서만 토글 노출
+    var caps = null;
+    try { caps = scanner.getRunningTrackCapabilities(); } catch (e) {}
+    var canMacro = !!(caps && caps.focusDistance &&
+      caps.focusMode && caps.focusMode.indexOf && caps.focusMode.indexOf("manual") >= 0);
+    if (canMacro) { camCtrls.classList.remove("hide"); updateMacroBtn(); }
+    else { camCtrls.classList.add("hide"); }
+  }
+
+  // 초점 적용: 접사 ON이면 근거리 수동초점 고정, OFF면 연속 자동초점
+  function applyFocus() {
+    if (!scanner) return;
+    var adv;
+    if (macroOn) {
+      var near = 0;
+      try { var c = scanner.getRunningTrackCapabilities(); if (c && c.focusDistance) near = c.focusDistance.min; } catch (e) {}
+      adv = [{ focusMode: "manual", focusDistance: near }];
+    } else {
+      adv = [{ focusMode: "continuous" }];
+    }
+    try { scanner.applyVideoConstraints({ advanced: adv }).catch(function () {}); } catch (e) {}
+  }
+
+  function updateMacroBtn() {
+    btnMacro.textContent = macroOn ? "🔍 접사 고정 켜짐" : "🔍 접사 고정";
+    btnMacro.classList.toggle("on", macroOn);
+  }
+
+  btnMacro.addEventListener("click", function () {
+    if (!scanning) return;
+    macroOn = !macroOn;
+    updateMacroBtn();
+    applyFocus();
+    toast(macroOn ? "접사 고정: 가까이서 또렷하게" : "자동초점으로 전환");
+  });
+
   function stopScan() {
     if (scanner) {
       scanner.stop().then(function () { scanner.clear(); }).catch(function () {});
     }
     scanning = false;
     readerEl.classList.add("hide");
+    camCtrls.classList.add("hide");
     btnScan.textContent = "📷 카메라 스캔 시작";
     btnScan.classList.remove("sec");
   }
